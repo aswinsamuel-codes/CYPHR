@@ -1,3 +1,5 @@
+import 'react-native-get-random-values';
+
 import React, { useEffect } from 'react';
 import { SafeAreaView, StatusBar } from 'react-native';
 import { ChatScreen } from './components/ChatScreen';

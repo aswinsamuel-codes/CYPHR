@@ -28,14 +28,33 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_WIFI_STATE",
         "CHANGE_WIFI_STATE",
-        "NEARBY_WIFI_DEVICES"
+        "NEARBY_WIFI_DEVICES",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       }
     },
-    "web": {}
+    "web": {},
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": [
+            "peripheral",
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "Allow CYPHR to connect to nearby mesh nodes using Bluetooth."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b81fc61d-baa9-4a72-9663-bad378c21376"
+      }
+    }
   }
 }
-
-
