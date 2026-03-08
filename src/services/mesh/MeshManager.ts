@@ -21,6 +21,15 @@ type OutboundQueueItem = {
 
 const DEDUP_CACHE_MAX_SIZE = 500;
 
+/** Minimum relay delay in ms (prevents forwarding storms) */
+const RELAY_DELAY_MIN_MS = 50;
+
+/** Maximum relay delay in ms */
+const RELAY_DELAY_MAX_MS = 200;
+
+/** Probability (0–1) that this node will relay a message. 0.7 = 70% */
+const RELAY_PROBABILITY = 0.7;
+
 export class MeshManager {
 	private emitter = new EventEmitter<Events>();
 	private deviceId = `cyphr-${uuidv4().slice(0, 8)}`;
@@ -34,7 +43,7 @@ export class MeshManager {
 
 	constructor(storage: typeof Storage) {
 		this.storage = storage;
-		this.bleTransport = new BLETransport();
+		this.bleTransport = new BLETransport(this.deviceId);
 	}
 
 	async start() {
@@ -45,8 +54,8 @@ export class MeshManager {
 		// ── Wire BLETransport events ──────────────────────────────────
 
 		// Inbound envelopes from BLE peers → relay pipeline
-		this.bleTransport.onEnvelopeReceived((envelope) => {
-			this.handleInboundEnvelope(envelope);
+		this.bleTransport.onEnvelopeReceived((envelope, fromPeerId) => {
+			this.handleInboundEnvelope(envelope, fromPeerId);
 		});
 
 		// Track connected BLE peers in the local peers list
@@ -60,21 +69,13 @@ export class MeshManager {
 			this.peers = this.peers.filter((id) => id !== peerId);
 		});
 
-		// Auto-connect to discovered CYPHR peers
-		this.bleTransport.onPeerDiscovered((peer) => {
-			this.bleTransport.connectToPeer(peer.id).catch(() => {
-				// Connection failure is non-fatal; peer will be retried on next scan
-			});
-		});
-
-		// Start BLE scanning + outbound queue
-		await this.bleTransport.startScanning();
+		// Initialize BLE (scanning, advertising, auto-connect all handled internally)
+		await this.bleTransport.initialize();
 		this.txLoop();
 	}
 
 	stop() {
 		this.running = false;
-		this.bleTransport.stopScanning();
 		this.bleTransport.destroy();
 	}
 
@@ -144,9 +145,12 @@ export class MeshManager {
 	 * prototype simulation).  Implements the full relay pipeline:
 	 *   1. Dedup check
 	 *   2. Deliver locally if we are the recipient (or broadcast)
-	 *   3. Relay to all connected peers if TTL allows
+	 *   3. Relay to all connected peers (except sender) if TTL allows
+	 *
+	 * @param envelope    The encrypted envelope to process.
+	 * @param fromPeerId  BLE peer ID that sent this envelope (excluded from relay).
 	 */
-	handleInboundEnvelope(envelope: EncryptedEnvelope) {
+	handleInboundEnvelope(envelope: EncryptedEnvelope, fromPeerId?: string) {
 		// ── Step 1: Deduplication ──────────────────────────────────────
 		if (this.seenEnvelopeIds.has(envelope.id)) return;
 		this.addToDedup(envelope.id);
@@ -173,13 +177,19 @@ export class MeshManager {
 			if (isForUs) return;
 		}
 
-		// ── Step 3-6: Relay to peers if TTL allows ─────────────────────
+		// ── Step 3-4: Relay to peers if TTL allows ─────────────────────
 		if (envelope.ttl <= 0) {
 			// TTL exhausted — drop the message, do not relay
 			return;
 		}
 
-		// Mutate a shallow copy so the original is untouched
+		// Probabilistic relay: skip forwarding some messages to
+		// reduce congestion in dense mesh environments.
+		if (Math.random() > RELAY_PROBABILITY) {
+			return;
+		}
+
+		// Create a relay copy with updated routing metadata
 		const relayed: EncryptedEnvelope = {
 			...envelope,
 			ttl: envelope.ttl - 1,
@@ -187,26 +197,37 @@ export class MeshManager {
 			hops: [...envelope.hops, this.deviceId],
 		};
 
-		this.forwardToAllPeers(relayed);
+		// Randomized delay (50–200ms) before forwarding to prevent
+		// simultaneous relay storms in dense networks.
+		const delay = RELAY_DELAY_MIN_MS + Math.random() * (RELAY_DELAY_MAX_MS - RELAY_DELAY_MIN_MS);
+		setTimeout(() => {
+			if (!this.running) return; // don't relay after shutdown
+			this.forwardToAllPeers(relayed, fromPeerId);
+		}, delay);
 	}
 
 	// ── Peer forwarding ───────────────────────────────────────────────
 
 	/**
-	 * Send an envelope to every currently connected BLE peer.
-	 * Falls back to local queue if no BLE peers are available.
+	 * Send an envelope to every connected BLE peer, excluding the
+	 * sender to prevent echo loops.
+	 *
+	 * @param envelope      The envelope to forward.
+	 * @param excludePeerId Peer to skip (the one that sent us this envelope).
 	 */
-	private forwardToAllPeers(envelope: EncryptedEnvelope) {
-		const connectedPeers = this.bleTransport.getConnectedPeers();
+	private forwardToAllPeers(envelope: EncryptedEnvelope, excludePeerId?: string) {
+		const connectedPeers = this.bleTransport.getConnectedPeers()
+			.filter((p) => p.id !== excludePeerId);
 
 		if (connectedPeers.length > 0) {
-			// Send over BLE to all connected peers
-			this.bleTransport.broadcastEnvelope(envelope).catch(() => {
-				// If BLE broadcast fails, fall back to queue for retry
-				this.queue.push({ envelope, attempts: 0 });
-			});
+			// Send individually so we can skip the sender
+			for (const peer of connectedPeers) {
+				this.bleTransport.sendEnvelope(peer.id, envelope).catch(() => {
+					// Send failure is non-fatal; will retry via queue
+				});
+			}
 		} else {
-			// No BLE peers — queue for later transmission
+			// No eligible BLE peers — queue for later transmission
 			this.queue.push({ envelope, attempts: 0 });
 		}
 
