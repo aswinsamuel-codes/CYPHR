@@ -11,7 +11,6 @@ const meshManager = new MeshManager(Storage);
 
 export default function App() {
 	useEffect(() => {
-		console.log('[CYPHR] App mounted — initializing MeshManager');
 		meshManager.start();
 		return () => meshManager.stop();
 	}, []);

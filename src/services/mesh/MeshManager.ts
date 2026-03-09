@@ -113,6 +113,7 @@ export class MeshManager {
 	async sendText(text: string, recipientId: string | 'broadcast' = 'broadcast'): Promise<ChatMessage> {
 		const key = this.deviceKey || undefined;
 		const envelope = CryptoService.encryptMessage({ text, senderId: this.deviceId, recipientId }, key);
+		console.log('[MeshManager] Envelope created — id:', envelope.id, 'recipient:', recipientId, 'ttl:', envelope.ttl);
 		// Mark our own outbound messages as seen so we don't process them if echoed back
 		this.addToDedup(envelope.id);
 		this.queue.push({ envelope, attempts: 0 });
@@ -155,6 +156,8 @@ export class MeshManager {
 		if (this.seenEnvelopeIds.has(envelope.id)) return;
 		this.addToDedup(envelope.id);
 
+		console.log('[MeshManager] Envelope received — id:', envelope.id, 'from:', fromPeerId ?? 'local', 'sender:', envelope.senderId, 'ttl:', envelope.ttl);
+
 		const isForUs = envelope.recipientId === this.deviceId;
 		const isBroadcast = envelope.recipientId === 'broadcast';
 
@@ -179,6 +182,7 @@ export class MeshManager {
 
 		// ── Step 3-4: Relay to peers if TTL allows ─────────────────────
 		if (envelope.ttl <= 0) {
+			console.log('[MeshManager] Relay skipped — TTL exhausted for envelope:', envelope.id);
 			// TTL exhausted — drop the message, do not relay
 			return;
 		}
@@ -186,6 +190,7 @@ export class MeshManager {
 		// Probabilistic relay: skip forwarding some messages to
 		// reduce congestion in dense mesh environments.
 		if (Math.random() > RELAY_PROBABILITY) {
+			console.log('[MeshManager] Relay skipped — probability check failed for envelope:', envelope.id);
 			return;
 		}
 
@@ -196,6 +201,8 @@ export class MeshManager {
 			relayCount: envelope.relayCount + 1,
 			hops: [...envelope.hops, this.deviceId],
 		};
+
+		console.log('[MeshManager] Relay triggered — envelope:', envelope.id, '| TTL:', envelope.ttl, '→', relayed.ttl, '| hops:', relayed.hops.length);
 
 		// Randomized delay (50–200ms) before forwarding to prevent
 		// simultaneous relay storms in dense networks.

@@ -118,6 +118,8 @@ export class BLETransport {
         if (this.active) return;
         this.active = true;
 
+        console.log('[BLETransport] BLE manager initialized for device:', this.deviceId);
+
         // Start periodic cleanup of stale reassembly buffers
         this.reassemblyCleanupTimer = setInterval(
             () => this.cleanupStaleBuffers(),
@@ -126,6 +128,7 @@ export class BLETransport {
 
         // Monitor Bluetooth adapter state changes
         this.stateSubscription = this.manager.onStateChange((state) => {
+            console.log('[BLETransport] Bluetooth state changed:', state);
             this.emitter.emit('bluetoothStateChanged', state);
 
             if (state === State.PoweredOn && this.active) {
@@ -163,6 +166,7 @@ export class BLETransport {
 
         this.scanning = true;
         this.emitter.emit('scanStateChanged', true);
+        console.log('[BLETransport] Scanning started — looking for CYPHR devices...');
 
         this.manager.startDeviceScan(
             [CYPHR_SERVICE_UUID],
@@ -207,6 +211,8 @@ export class BLETransport {
         const existing = this.peers.get(device.id);
         if (existing?.connected) return;
 
+        console.log('[BLETransport] CYPHR device discovered:', device.id, 'name:', device.name || device.localName, 'RSSI:', device.rssi);
+
         const peer: BLEPeer = {
             id: device.id,
             name: device.name || device.localName || null,
@@ -220,6 +226,7 @@ export class BLETransport {
         this.emitter.emit('peerDiscovered', peer);
 
         // ── 4. Auto-connect to discovered peer ───────────────────────
+        console.log('[BLETransport] Attempting connection to peer:', device.id);
         this.connectToPeer(device.id).catch(() => {
             // Non-fatal; will retry on next scan cycle
         });
@@ -324,6 +331,8 @@ export class BLETransport {
             this.peers.set(peerId, peer);
             this.reconnectAttempts.delete(peerId);
 
+            console.log('[BLETransport] Peer connected:', peerId, '| MTU:', negotiatedMtu);
+
             // Prepare reassembly buffer for this peer
             this.reassemblyBuffers.set(peerId, new Map());
 
@@ -336,6 +345,7 @@ export class BLETransport {
                 }
                 // Discard any partial reassembly buffers for this peer
                 this.reassemblyBuffers.delete(peerId);
+                console.log('[BLETransport] Peer disconnected:', peerId);
                 this.emitter.emit('peerDisconnected', peerId);
 
                 if (this.active) {
