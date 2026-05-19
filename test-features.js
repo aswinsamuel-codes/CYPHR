@@ -1,7 +1,7 @@
 /**
  * CYPHR Features Verification & Simulation Runner
  * 
- * Validates the core logic of Group Channels, SOS Beacon parser,
+ * Validates the core logic of Group Channels, SOS Beacon parser (with Battery levels),
  * and Voice Message structures introduced in the recent phases.
  * Run with: node test-features.js
  */
@@ -14,11 +14,12 @@ console.log('══════════════════════�
 // 🧪 MOCK ENVS & DEVICE ID
 const DEVICE_ID = 'cyphr-peer-test-device-1234';
 
-// ── Test 1: SOS Beacon Parser ───────────────────────────────────────────
+// ── Test 1: SOS Beacon Structured Parser ───────────────────────────────────────────
 console.log('Test 1: SOS Beacon Structured Parser');
 
-// Structured SOS distress message format
-const mockSosText = `🚨 [SOS BEACON] 🚨\nLat: 13.0827, Lng: 80.2707\nAlt: 42m | Acc: ±5m\nMessage: Flood level rising, need rescue!`;
+// Structured SOS distress message format WITH battery status
+const mockSosTextWithBattery = `🚨 [SOS BEACON] 🚨\nLat: 13.0827, Lng: 80.2707\nAlt: 42m | Acc: ±5m | Battery: 14%\nMessage: Flood level rising, need rescue!`;
+const mockSosTextWithoutBattery = `🚨 [SOS BEACON] 🚨\nLat: 13.0827, Lng: 80.2707\nAlt: 42m | Acc: ±5m\nMessage: Medical dispatch requested.`;
 
 const parseSOSMessage = (text) => {
 	const isSos = text.startsWith('🚨 [SOS BEACON] 🚨');
@@ -29,6 +30,7 @@ const parseSOSMessage = (text) => {
 	let lng = '';
 	let alt = '';
 	let acc = '';
+	let battery = null;
 	let message = '';
 
 	for (const line of lines) {
@@ -37,9 +39,17 @@ const parseSOSMessage = (text) => {
 			lat = parts[0]?.trim() || '';
 			lng = parts[1]?.trim() || '';
 		} else if (line.startsWith('Alt:')) {
-			const parts = line.replace('Alt:', '').split('| Acc:');
-			alt = parts[0]?.trim() || '';
-			acc = parts[1]?.trim() || '';
+			const parts = line.replace('Alt:', '').split('|');
+			for (const part of parts) {
+				const p = part.trim();
+				if (p.startsWith('Acc:')) {
+					acc = p.replace('Acc:', '').trim();
+				} else if (p.startsWith('Battery:')) {
+					battery = p.replace('Battery:', '').trim();
+				} else if (!p.startsWith('Acc:') && !p.startsWith('Battery:')) {
+					alt = p;
+				}
+			}
 		} else if (line.startsWith('Message:')) {
 			message = line.replace('Message:', '').trim();
 		}
@@ -47,33 +57,61 @@ const parseSOSMessage = (text) => {
 
 	return {
 		isSos: true,
-		coords: { lat, lng, alt, acc },
+		coords: { lat, lng, alt, acc, battery },
 		message: message || 'Emergency distress signal broadcasted!'
 	};
 };
 
-const parsedSos = parseSOSMessage(mockSosText);
-console.log('  Parsed Struct:');
-console.log('    isSos:', parsedSos.isSos);
-console.log('    Latitude:', parsedSos.coords ? parsedSos.coords.lat : 'N/A');
-console.log('    Longitude:', parsedSos.coords ? parsedSos.coords.lng : 'N/A');
-console.log('    Altitude:', parsedSos.coords ? parsedSos.coords.alt : 'N/A');
-console.log('    Accuracy:', parsedSos.coords ? parsedSos.coords.acc : 'N/A');
-console.log('    Message:', parsedSos.message);
+// Verify SOS message WITH battery
+console.log('  Parsing SOS Envelope (with Battery):');
+const parsedWithBattery = parseSOSMessage(mockSosTextWithBattery);
+console.log('    isSos:', parsedWithBattery.isSos);
+console.log('    Latitude:', parsedWithBattery.coords ? parsedWithBattery.coords.lat : 'N/A');
+console.log('    Longitude:', parsedWithBattery.coords ? parsedWithBattery.coords.lng : 'N/A');
+console.log('    Altitude:', parsedWithBattery.coords ? parsedWithBattery.coords.alt : 'N/A');
+console.log('    Accuracy:', parsedWithBattery.coords ? parsedWithBattery.coords.acc : 'N/A');
+console.log('    Battery:', parsedWithBattery.coords ? parsedWithBattery.coords.battery : 'N/A');
+console.log('    Message:', parsedWithBattery.message);
 
-const sosSuccess = parsedSos.isSos && 
-                   parsedSos.coords.lat === '13.0827' && 
-                   parsedSos.coords.lng === '80.2707' && 
-                   parsedSos.coords.acc === '±5m' && 
-                   parsedSos.message === 'Flood level rising, need rescue!';
+const sosBatterySuccess = parsedWithBattery.isSos && 
+                          parsedWithBattery.coords.lat === '13.0827' && 
+                          parsedWithBattery.coords.lng === '80.2707' && 
+                          parsedWithBattery.coords.alt === '42m' &&
+                          parsedWithBattery.coords.acc === '±5m' &&
+                          parsedWithBattery.coords.battery === '14%' && 
+                          parsedWithBattery.message === 'Flood level rising, need rescue!';
 
-console.log(sosSuccess ? '✅ SUCCESS: SOS Beacon parsed perfectly' : '❌ FAIL: SOS Beacon parse mismatch');
+console.log(sosBatterySuccess ? '  ✓ SUCCESS: Battery-inclusive SOS parsed' : '  ❌ FAIL: Battery-inclusive SOS parse mismatch');
 console.log();
+
+// Verify SOS message WITHOUT battery
+console.log('  Parsing SOS Envelope (without Battery):');
+const parsedWithoutBattery = parseSOSMessage(mockSosTextWithoutBattery);
+console.log('    isSos:', parsedWithoutBattery.isSos);
+console.log('    Latitude:', parsedWithoutBattery.coords ? parsedWithoutBattery.coords.lat : 'N/A');
+console.log('    Longitude:', parsedWithoutBattery.coords ? parsedWithoutBattery.coords.lng : 'N/A');
+console.log('    Altitude:', parsedWithoutBattery.coords ? parsedWithoutBattery.coords.alt : 'N/A');
+console.log('    Accuracy:', parsedWithoutBattery.coords ? parsedWithoutBattery.coords.acc : 'N/A');
+console.log('    Battery:', parsedWithoutBattery.coords ? parsedWithoutBattery.coords.battery : 'N/A');
+console.log('    Message:', parsedWithoutBattery.message);
+
+const sosNoBatterySuccess = parsedWithoutBattery.isSos && 
+                             parsedWithoutBattery.coords.lat === '13.0827' && 
+                             parsedWithoutBattery.coords.lng === '80.2707' && 
+                             parsedWithoutBattery.coords.alt === '42m' &&
+                             parsedWithoutBattery.coords.acc === '±5m' &&
+                             parsedWithoutBattery.coords.battery === null && 
+                             parsedWithoutBattery.message === 'Medical dispatch requested.';
+
+console.log(sosNoBatterySuccess ? '  ✓ SUCCESS: Standard SOS parsed' : '  ❌ FAIL: Standard SOS parse mismatch');
+console.log();
+
+const sosSuccess = sosBatterySuccess && sosNoBatterySuccess;
 
 // ── Test 2: Voice Message Parser ─────────────────────────────────────────
 console.log('Test 2: Voice Message Parser & Serialization');
 
-const mockVoiceBase64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; // mock short base64 audio
+const mockVoiceBase64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; 
 const mockVoiceText = `🎵 [VOICE MESSAGE] 🚨\nDuration: 7\nAudio: ${mockVoiceBase64}`;
 
 const parseVoiceMessage = (text) => {
@@ -112,9 +150,9 @@ console.log();
 console.log('Test 3: Channel Message Filtering Simulator');
 
 const mockMessages = [
-	{ id: '1', senderId: 'node-A', recipientId: 'channel-general', text: 'Hello everyone in general!' },
+	{ id: '1', senderId: 'node-A', recipientId: 'channel-general', text: 'Hello everyone in general! [Battery: 78%]' },
 	{ id: '2', senderId: 'node-B', recipientId: 'channel-rescue', text: 'Search party heading North.' },
-	{ id: '3', senderId: 'node-C', recipientId: 'broadcast', text: '🚨 [SOS BEACON] 🚨\nLat: 13.0, Lng: 80.0\nAlt: 10m | Acc: ±10m\nMessage: Medical emergency at Node C' },
+	{ id: '3', senderId: 'node-C', recipientId: 'broadcast', text: `🚨 [SOS BEACON] 🚨\nLat: 13.0, Lng: 80.0\nAlt: 10m | Acc: ±10m | Battery: 12%\nMessage: Medical emergency at Node C` },
 	{ id: '4', senderId: 'node-D', recipientId: DEVICE_ID, text: 'This is a private message to you.' },
 	{ id: '5', senderId: DEVICE_ID, recipientId: 'channel-medical', text: 'Medical stocks are ready.' },
 	{ id: '6', senderId: 'node-E', recipientId: 'channel-supplies', text: 'Water bottles dispatched.' },
@@ -138,7 +176,6 @@ console.log('  Feed in #general channel:');
 const generalFeed = simulateFilter('general');
 generalFeed.forEach(m => console.log(`    [Msg ${m.id}] Sender: ${m.senderId} | Recipient: ${m.recipientId} | Content: ${m.text.split('\n')[0]}`));
 
-// General feed must contain: general message, SOS message, and Private message
 const generalMatch = generalFeed.some(m => m.id === '1') && 
                        generalFeed.some(m => m.id === '3') && 
                        generalFeed.some(m => m.id === '4') && 
@@ -149,7 +186,6 @@ console.log('\n  Feed in #rescue channel:');
 const rescueFeed = simulateFilter('rescue');
 rescueFeed.forEach(m => console.log(`    [Msg ${m.id}] Sender: ${m.senderId} | Recipient: ${m.recipientId} | Content: ${m.text.split('\n')[0]}`));
 
-// Rescue feed must contain: rescue message, SOS message (safety override), and Private message
 const rescueMatch = rescueFeed.some(m => m.id === '2') && 
                       rescueFeed.some(m => m.id === '3') && 
                       rescueFeed.some(m => m.id === '4') && 
@@ -162,7 +198,7 @@ console.log();
 // ── Overall Summary ─────────────────────────────────────────────────────
 console.log('═══════════════════════════════════════');
 console.log('🎯 Summary:');
-console.log('  ✅ SOS Beacon Parser: PASS');
+console.log('  ✅ SOS Beacon Parser (with Battery): PASS');
 console.log('  ✅ Voice Message Parser: PASS');
 console.log('  ✅ Channel Filtering / Safety Override: PASS');
 console.log();

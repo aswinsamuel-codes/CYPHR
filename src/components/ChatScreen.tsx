@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import { cacheDirectory, EncodingType, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
+import * as Battery from 'expo-battery';
 
 type Props = {
 	meshManager: MeshManager;
@@ -28,6 +29,7 @@ interface SOSDetails {
 		lng: string;
 		alt: string;
 		acc: string;
+		battery: string | null;
 	} | null;
 	message: string;
 }
@@ -60,6 +62,7 @@ const parseSOSMessage = (text: string): SOSDetails => {
 	let lng = '';
 	let alt = '';
 	let acc = '';
+	let battery: string | null = null;
 	let message = '';
 
 	for (const line of lines) {
@@ -68,9 +71,18 @@ const parseSOSMessage = (text: string): SOSDetails => {
 			lat = parts[0]?.trim() || '';
 			lng = parts[1]?.trim() || '';
 		} else if (line.startsWith('Alt:')) {
-			const parts = line.replace('Alt:', '').split('| Acc:');
-			alt = parts[0]?.trim() || '';
-			acc = parts[1]?.trim() || '';
+			// e.g. Alt: 12m | Acc: ±5m | Battery: 12%
+			const parts = line.replace('Alt:', '').split('|');
+			for (const part of parts) {
+				const p = part.trim();
+				if (p.startsWith('Acc:')) {
+					acc = p.replace('Acc:', '').trim();
+				} else if (p.startsWith('Battery:')) {
+					battery = p.replace('Battery:', '').trim();
+				} else if (!p.startsWith('Acc:') && !p.startsWith('Battery:')) {
+					alt = p;
+				}
+			}
 		} else if (line.startsWith('Message:')) {
 			message = line.replace('Message:', '').trim();
 		}
@@ -78,7 +90,7 @@ const parseSOSMessage = (text: string): SOSDetails => {
 
 	return {
 		isSos: true,
-		coords: { lat, lng, alt, acc },
+		coords: { lat, lng, alt, acc, battery },
 		message: message || 'Emergency distress signal broadcasted!'
 	};
 };
@@ -130,6 +142,10 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 	const [isLocating, setIsLocating] = useState(false);
 	const [activeChannel, setActiveChannel] = useState<ChannelId>('general');
 	
+	// Battery & Power Guard states
+	const [batteryLevel, setBatteryLevel] = useState<number>(1.0);
+	const [powerGuardOverride, setPowerGuardOverride] = useState<boolean>(false);
+
 	// Voice recording states
 	const [recording, setRecording] = useState<Audio.Recording | null>(null);
 	const [isRecording, setIsRecording] = useState(false);
@@ -139,6 +155,9 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 	const inputRef = useRef<TextInput | null>(null);
 	const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 	const activeSoundRef = useRef<Audio.Sound | null>(null);
+
+	// Derives whether the Power Guard (low power mode) is active
+	const powerGuardActive = batteryLevel <= 0.2 || powerGuardOverride;
 
 	useEffect(() => {
 		const init = async () => {
@@ -167,11 +186,46 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 		};
 	}, [meshManager, storage]);
 
+	// Wire Battery Status Listeners
+	useEffect(() => {
+		let isMounted = true;
+		
+		const getBattery = async () => {
+			try {
+				const lvl = await Battery.getBatteryLevelAsync();
+				if (isMounted) setBatteryLevel(lvl >= 0 ? lvl : 1.0);
+			} catch (e) {
+				console.log('Failed to fetch initial battery level:', e);
+			}
+		};
+		getBattery();
+
+		const subscription = Battery.addBatteryLevelListener(({ batteryLevel: newLvl }) => {
+			if (isMounted) setBatteryLevel(newLvl >= 0 ? newLvl : 1.0);
+		});
+
+		return () => {
+			isMounted = false;
+			subscription.remove();
+		};
+	}, []);
+
+	// Proxy Low Power Mode duty cycles to MeshManager
+	useEffect(() => {
+		meshManager.setLowPowerMode(powerGuardActive);
+	}, [powerGuardActive, meshManager]);
+
 	const send = async () => {
 		const text = input.trim();
 		if (!text) return;
 		setInput('');
-		const msg = await meshManager.sendText(text, `channel-${activeChannel}`);
+
+		// Append battery suffix if Power Guard is active
+		const batteryPercent = Math.round(batteryLevel * 100);
+		const suffix = powerGuardActive ? ` [Battery: ${batteryPercent}%]` : '';
+		const finalPayload = `${text}${suffix}`;
+
+		const msg = await meshManager.sendText(finalPayload, `channel-${activeChannel}`);
 		await storage.saveMessage(msg);
 		setMessages((prev) => [msg, ...prev]);
 	};
@@ -204,9 +258,12 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 							const alt = location.coords.altitude ? Math.round(location.coords.altitude).toString() : 'N/A';
 							const acc = Math.round(location.coords.accuracy || 0).toString();
 
+							const batteryPercent = Math.round(batteryLevel * 100);
+							const suffix = powerGuardActive ? ` | Battery: ${batteryPercent}%` : '';
+
 							const customMsg = input.trim();
 							const sosText = customMsg || 'Distress signal broadcasted — emergency assistance needed!';
-							const formattedText = `🚨 [SOS BEACON] 🚨\nLat: ${lat}, Lng: ${lng}\nAlt: ${alt}m | Acc: ±${acc}m\nMessage: ${sosText}`;
+							const formattedText = `🚨 [SOS BEACON] 🚨\nLat: ${lat}, Lng: ${lng}\nAlt: ${alt}m | Acc: ±${acc}m${suffix}\nMessage: ${sosText}`;
 
 							setInput('');
 							if (inputRef.current) {
@@ -230,6 +287,11 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 	// ── Recording Helpers ─────────────────────────────────────────────
 
 	const startRecording = async () => {
+		if (powerGuardActive) {
+			Alert.alert('Power Guard Active', 'Voice notes are disabled in Power Guard mode to conserve critical battery charge.');
+			return;
+		}
+
 		try {
 			const permission = await Audio.requestPermissionsAsync();
 			if (permission.status !== 'granted') {
@@ -444,6 +506,12 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 						</View>
 					</View>
 
+					{parsedSOS.coords.battery && (
+						<View style={styles.sosBatteryContainer}>
+							<Text style={styles.sosBatteryText}>🔋 Node Battery Level: {parsedSOS.coords.battery}</Text>
+						</View>
+					)}
+
 					<View style={styles.sosCardFooter}>
 						<Text style={styles.sosTimeText}>{format(item.timestamp, 'PP pp')}</Text>
 						<Text style={styles.sosStatusText}>{item.status.toUpperCase()}</Text>
@@ -539,8 +607,30 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 							</TouchableOpacity>
 						);
 					})}
+
+					{/* Interactive Battery / Power Guard Manual Toggle Pill */}
+					<TouchableOpacity
+						onPress={() => setPowerGuardOverride((prev) => !prev)}
+						style={[
+							styles.batteryPill,
+							powerGuardActive ? styles.batteryPillActive : styles.batteryPillInactive
+						]}
+					>
+						<Text style={[styles.batteryPillText, powerGuardActive && styles.batteryPillTextActive]}>
+							🔋 {Math.round(batteryLevel * 100)}%{powerGuardActive ? ' (GUARD)' : ''}
+						</Text>
+					</TouchableOpacity>
 				</ScrollView>
 			</View>
+
+			{/* Custom Battery-Saving Power Guard Warning Banner */}
+			{powerGuardActive && (
+				<View style={styles.powerGuardBanner}>
+					<Text style={styles.powerGuardBannerText}>
+						⚠️ Power Guard Active: BLE Duty Cycles throttled to conserve phone battery. Audio messages disabled.
+					</Text>
+				</View>
+			)}
 
 			<FlatList
 				data={filteredMessages}
@@ -582,8 +672,11 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 						</TouchableOpacity>
 						<TouchableOpacity
 							onPress={startRecording}
-							disabled={isLocating}
-							style={[styles.micButton, isLocating && { opacity: 0.5 }]}
+							disabled={isLocating || powerGuardActive}
+							style={[
+								styles.micButton,
+								(isLocating || powerGuardActive) && { opacity: 0.3 }
+							]}
 						>
 							<Text style={styles.micButtonText}>🎙️</Text>
 						</TouchableOpacity>
@@ -656,6 +749,45 @@ const styles = StyleSheet.create({
 	},
 	channelTextInactive: {
 		color: '#71717a',
+	},
+	batteryPill: {
+		paddingHorizontal: 10,
+		paddingVertical: 5,
+		borderRadius: 20,
+		borderWidth: 1,
+		justifyContent: 'center',
+		alignItems: 'center',
+		marginRight: 16,
+	},
+	batteryPillInactive: {
+		backgroundColor: '#18181b',
+		borderColor: '#27272a',
+	},
+	batteryPillActive: {
+		backgroundColor: 'rgba(217,119,6,0.1)',
+		borderColor: '#d97706',
+	},
+	batteryPillText: {
+		fontSize: 10,
+		fontWeight: '800',
+		color: '#a1a1aa',
+	},
+	batteryPillTextActive: {
+		color: '#f59e0b',
+	},
+	powerGuardBanner: {
+		backgroundColor: '#2d1810',
+		borderBottomColor: '#d97706',
+		borderBottomWidth: 1,
+		paddingVertical: 6,
+		paddingHorizontal: 16,
+	},
+	powerGuardBannerText: {
+		color: '#f59e0b',
+		fontSize: 10,
+		fontWeight: '700',
+		textAlign: 'center',
+		lineHeight: 14,
 	},
 	listContainer: {
 		paddingHorizontal: 16,
@@ -809,6 +941,20 @@ const styles = StyleSheet.create({
 		fontSize: 13,
 		fontFamily: 'monospace',
 		fontWeight: '600',
+	},
+	sosBatteryContainer: {
+		marginTop: 8,
+		backgroundColor: 'rgba(245,158,11,0.08)',
+		borderColor: 'rgba(245,158,11,0.2)',
+		borderWidth: 1,
+		borderRadius: 6,
+		paddingVertical: 4,
+		paddingHorizontal: 8,
+	},
+	sosBatteryText: {
+		color: '#f59e0b',
+		fontSize: 11,
+		fontWeight: '700',
 	},
 	sosCardFooter: {
 		flexDirection: 'row',

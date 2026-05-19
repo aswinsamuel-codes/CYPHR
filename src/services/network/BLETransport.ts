@@ -94,6 +94,8 @@ export class BLETransport {
     private active = false;
     private deviceId: string;
     private scanCycleTimer: ReturnType<typeof setTimeout> | null = null;
+    private scanIntervalMs = SCAN_INTERVAL_MS;
+    private scanDurationMs = SCAN_DURATION_MS;
     private reconnectAttempts = new Map<string, number>();
     private stateSubscription: { remove: () => void } | null = null;
 
@@ -105,6 +107,17 @@ export class BLETransport {
     constructor(deviceId: string) {
         this.deviceId = deviceId;
         this.manager = new BleManager();
+    }
+
+    setLowPowerMode(enabled: boolean): void {
+        if (enabled) {
+            this.scanIntervalMs = 25_000;
+            this.scanDurationMs = 5_000;
+        } else {
+            this.scanIntervalMs = SCAN_INTERVAL_MS;
+            this.scanDurationMs = SCAN_DURATION_MS;
+        }
+        console.log(`[BLETransport] Low power mode set to ${enabled}. Interval: ${this.scanIntervalMs}ms, Duration: ${this.scanDurationMs}ms`);
     }
 
     // ── 1. Start BLE Manager ──────────────────────────────────────────────
@@ -181,7 +194,7 @@ export class BLETransport {
             },
         );
 
-        // After SCAN_DURATION_MS, stop and schedule the next cycle
+        // After scanDurationMs, stop and schedule the next cycle
         this.scanCycleTimer = setTimeout(() => {
             this.manager.stopDeviceScan();
             this.scanning = false;
@@ -189,9 +202,9 @@ export class BLETransport {
 
             // Pause, then scan again
             if (this.active) {
-                this.scanCycleTimer = setTimeout(() => this.performScan(), SCAN_INTERVAL_MS);
+                this.scanCycleTimer = setTimeout(() => this.performScan(), this.scanIntervalMs);
             }
-        }, SCAN_DURATION_MS);
+        }, this.scanDurationMs);
     }
 
     /**

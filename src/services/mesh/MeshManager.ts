@@ -275,6 +275,10 @@ export class MeshManager {
 			await new Promise((r) => setTimeout(r, TICK_MS));
 		}
 	}
+
+	setLowPowerMode(enabled: boolean): void {
+		this.bleTransport.setLowPowerMode(enabled);
+	}
 }
 
 
