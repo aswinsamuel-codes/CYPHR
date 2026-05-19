@@ -66,7 +66,7 @@ export const CryptoService = {
             const bytes = CryptoJS.AES.decrypt(envelope.ciphertext, key);
             const json = bytes.toString(CryptoJS.enc.Utf8);
             return JSON.parse(json);
-        } catch (e) {
+        } catch {
             return null;
         }
     },
