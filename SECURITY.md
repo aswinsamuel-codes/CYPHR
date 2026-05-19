@@ -21,7 +21,7 @@ Only the latest release (and current main branch) is supported for security upda
 
 If you discover a security vulnerability, please do **NOT** open a public issue. Instead, report it privately:
 
-1. Send an email to **cyphr-security@proton.me**.
+1. Send an email to **aswinsamuelofficial@gmail.com**.
 2. If possible, encrypt your email or share details via a secure pastebin.
 3. We will acknowledge receipt of your report within **48 hours**.
 4. We will send a detailed assessment and proposed mitigation plan within **7 days**.
