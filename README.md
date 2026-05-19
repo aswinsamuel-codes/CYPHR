@@ -1,39 +1,98 @@
-# CYPHR — Offline-First Mesh Communication Network
-
-**CYPHR** is a next-generation peer-to-peer mesh communication system enabling secure, encrypted messaging over Bluetooth 5.0 and Wi-Fi Direct without requiring towers, satellites, or active internet. Built for disaster relief, emergency response, remote operations, and secure field communications.
+<p align="center">
+  <h1 align="center">🔐 CYPHR</h1>
+  <p align="center">
+    <strong>Offline-First Mesh Communication Network</strong>
+  </p>
+  <p align="center">
+    Secure, encrypted peer-to-peer messaging over Bluetooth &amp; Wi-Fi Direct.<br/>
+    No towers. No satellites. No internet. Just your phone and your people.
+  </p>
+  <p align="center">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"/></a>
+    <img src="https://img.shields.io/badge/Platform-Android%20%7C%20iOS-green.svg" alt="Platform"/>
+    <img src="https://img.shields.io/badge/Phase-2%20(BLE%20Mesh)-orange.svg" alt="Phase"/>
+    <img src="https://img.shields.io/badge/Encryption-AES--256-purple.svg" alt="Encryption"/>
+    <img src="https://img.shields.io/badge/PRs-Welcome-brightgreen.svg" alt="PRs Welcome"/>
+  </p>
+</p>
 
 ---
 
-## 🎯 Vision
+## 🎯 What is CYPHR?
 
-CYPHR is **not just a chat app** — it's a **lifeline** when all else fails. Each connected device acts as a relay node, storing and forwarding encrypted messages until they reach the intended recipient.
+CYPHR is **not just a chat app** — it's a **lifeline** when all else fails.
+
+When earthquakes destroy cell towers, when hurricanes knock out power grids, when floods isolate communities — CYPHR keeps people connected. Every phone running CYPHR becomes a relay node in a self-healing mesh network, storing and forwarding encrypted messages until they reach the intended recipient.
+
+**Built for:**
+- 🌊 Disaster relief coordination
+- 🚑 Emergency first-responder communication
+- 🏔️ Remote field operations
+- 🔒 Secure offline messaging
+- 🌍 Areas with no cellular infrastructure
 
 ---
 
-## ✅ Phase 1: Secure Local Prototype (COMPLETED)
+## ✨ Features
 
-### Features Implemented
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **AES-256 Encryption** | ✅ Stable | End-to-end symmetric encryption with SHA-256 integrity |
+| **Device Key Persistence** | ✅ Stable | Cryptographic identity survives app restarts |
+| **Store-and-Forward Queue** | ✅ Stable | Messages queue offline and deliver when a path is found |
+| **Bluetooth 5.0 LE Mesh** | 🔄 Beta | BLE peer discovery, auto-connect, and relay |
+| **Multi-Hop Relay** | 🔄 Beta | Messages hop across devices with TTL and deduplication |
+| **Chunked BLE Transfer** | 🔄 Beta | Large messages split across BLE MTU boundaries |
+| **Auto-Reconnect** | 🔄 Beta | Exponential backoff reconnection for dropped peers |
+| **Wi-Fi Direct** | 📋 Planned | High-bandwidth peer-to-peer transport |
+| **Public-Key Crypto** | 📋 Planned | X25519 ECDH key exchange, forward secrecy |
+| **SOS Beacon** | 📋 Planned | One-tap distress signal with GPS coordinates |
+| **Voice Messages** | 📋 Planned | Compressed audio relay through mesh |
+| **Group Channels** | 📋 Planned | Named channels with per-group encryption |
+| **Cloud Bridge** | 📋 Planned | Optional internet fallback when available |
 
-✅ **Device Key Persistence**
-- Symmetric AES-256 encryption keys generated and stored per device
-- Keys persist across app restarts using AsyncStorage
-- Automatic key initialization on first launch
+---
 
-✅ **Encrypted Messaging**
-- End-to-end AES encryption using crypto-js
-- Message integrity verification via SHA-256 checksums
-- Support for broadcast and direct messages
+## 🚀 Quick Start
 
-✅ **Mesh Manager (Prototype)**
-- Event-driven architecture with message and status updates
-- Store-and-forward queue for offline message relay
-- Simulated peer discovery (BLE/Wi-Fi Direct stubs ready for Phase 2)
+### Prerequisites
 
-✅ **UI & Developer Tools**
-- Clean chat interface with message history
-- Device info header showing device ID and masked encryption key
-- "Generate New Key" button for testing key rotation
-- Message status indicators (queued, sent, delivered, relayed)
+- [Node.js](https://nodejs.org/) 18+ and npm
+- [Expo CLI](https://docs.expo.dev/get-started/installation/) (installed automatically)
+- Android Studio (for Android) or Xcode (for iOS)
+- A physical device with Bluetooth 5.0 (for mesh features)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/cyphr-mesh/cyphr.git
+cd cyphr
+
+# Install dependencies
+npm install
+
+# Verify TypeScript compiles
+npx tsc --noEmit
+
+# Start the development server
+npm start
+```
+
+### Running on Device
+
+After `npm start`, you can:
+- Press `a` to run on Android emulator/device
+- Press `i` to run on iOS simulator/device
+- Scan the QR code with [Expo Go](https://expo.dev/go) on a physical device
+
+> **Note:** BLE mesh features require a physical device — they don't work in emulators.
+
+### Running Crypto Tests
+
+```bash
+node test-crypto.js
+```
 
 ---
 
@@ -42,197 +101,215 @@ CYPHR is **not just a chat app** — it's a **lifeline** when all else fails. Ea
 ```
 CYPHR/
 ├── src/
+│   ├── App.tsx                          # App entry point
 │   ├── components/
-│   │   ├── ChatScreen.tsx          # Main chat UI
-│   │   └── DeviceInfoHeader.tsx    # Device ID and key display
-│   ├── services/
-│   │   ├── crypto/
-│   │   │   └── CryptoService.ts    # AES encryption, key generation
-│   │   ├── mesh/
-│   │   │   └── MeshManager.ts      # Peer discovery, message routing
-│   │   └── storage/
-│   │       └── Storage.ts          # AsyncStorage wrapper for persistence
-│   └── App.tsx                     # App entry point
+│   │   ├── ChatScreen.tsx               # Main chat UI
+│   │   └── DeviceInfoHeader.tsx         # Device identity display
+│   └── services/
+│       ├── crypto/
+│       │   └── CryptoService.ts         # AES-256 encryption engine
+│       ├── mesh/
+│       │   └── MeshManager.ts           # Mesh orchestration & relay logic
+│       ├── network/
+│       │   └── BLETransport.ts          # Bluetooth LE transport layer
+│       └── storage/
+│           └── Storage.ts               # AsyncStorage persistence
+├── .github/                             # CI, templates, community files
+├── LICENSE                              # AGPL-3.0
+├── CONTRIBUTING.md                      # Contributor guide
+├── SECURITY.md                          # Security policy
+└── CHANGELOG.md                         # Version history
 ```
 
-### Key Modules
+### How Messages Flow
 
-**CryptoService**
-- `generateSymmetricKey()` — Creates 256-bit AES keys
-- `deriveKeyFromPassphrase()` — PBKDF2-based key derivation
-- `encryptMessage()` / `decryptMessage()` — AES-256 with checksum validation
-
-**MeshManager**
-- `start()` / `stop()` — Lifecycle management
-- `sendText()` — Encrypt and queue outbound messages
-- `onMessage()` / `onStatusUpdate()` — Event subscriptions
-- `regenerateDeviceKey()` — Key rotation support
-
-**Storage**
-- `getAllMessages()` / `saveMessage()` / `updateStatus()` — Message persistence
-- `getDeviceKey()` / `setDeviceKey()` — Secure key storage
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Node.js 18+ and npm
-- Expo CLI (installed automatically)
-
-### Installation
-
-```powershell
-# Clone or navigate to project
-cd D:\MY works\MY_IDEAS\MESH
-
-# Install dependencies
-npm install
-
-# Start development server
-npm start
+```
+User sends "Help needed at building 4"
+    │
+    ▼
+┌──────────────────────────────────────┐
+│ CryptoService.encryptMessage()       │
+│ AES-256 encrypt → SHA-256 checksum   │
+│ → EncryptedEnvelope                  │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ MeshManager.sendText()               │
+│ Queue envelope → BLE broadcast       │
+└──────────────┬───────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────┐
+│ BLETransport.sendEnvelope()          │
+│ Chunk → frame → write to BLE GATT   │
+│ C|<tid>|0/3|<base64>                 │
+│ C|<tid>|1/3|<base64>                 │
+│ C|<tid>|2/3|<base64>                 │
+└──────────────┬───────────────────────┘
+               │
+    ┌──────────┴──────────┐
+    ▼                     ▼
+┌─────────┐         ┌─────────┐
+│ Peer A  │ ──────► │ Peer B  │  (multi-hop relay)
+│ relay   │         │ deliver │
+└─────────┘         └─────────┘
 ```
 
-### Running the App
+### Relay Pipeline
 
-After `npm start`, you can:
-- Press `w` to open in web browser (for quick testing)
-- Press `a` to run on Android emulator
-- Press `i` to run on iOS simulator
-- Scan QR code with Expo Go app on physical device
+Each message follows this path when received by a node:
 
-### Testing Key Persistence
-
-1. Launch the app
-2. Send a message (it will be encrypted with generated device key)
-3. Check the Device Info Header for your device ID and masked key
-4. Close and restart the app
-5. Verify the same device ID and key are loaded
-6. Click "Generate New Key" to test key rotation
+1. **Dedup** — Check if we've seen this envelope ID before
+2. **Deliver** — If addressed to us (or broadcast), decrypt and display
+3. **TTL Check** — Drop if time-to-live is exhausted
+4. **Probabilistic Relay** — 70% chance of forwarding (prevents storms)
+5. **Delayed Forward** — Random 50-200ms jitter before relaying to all peers
 
 ---
 
 ## 📋 Phase Roadmap
 
-### ✅ Phase 1: Secure Local Prototype (Current)
-- [x] Device key persistence with AsyncStorage
-- [x] AES-256 symmetric encryption
+### ✅ Phase 1: Secure Local Prototype — `v0.1.0`
+- [x] AES-256 symmetric encryption with SHA-256 integrity
+- [x] Device key persistence (AsyncStorage)
+- [x] PBKDF2 key derivation from passphrase
 - [x] Store-and-forward message queue
-- [x] Minimal chat UI with status indicators
-- [x] Developer overlay for device info
+- [x] Chat UI with message status indicators
+- [x] Device info header with masked key display
+- [x] Key regeneration support
 
-### 🔄 Phase 2: Multi-Hop Mesh Relay (Next)
-- [ ] Bluetooth 5.0 LE integration (`react-native-ble-plx`)
-- [ ] Wi-Fi Direct support (Android native module)
-- [ ] Peer discovery and connection management
-- [ ] Multi-hop message routing with TTL
-- [ ] Relay count and path tracking
-- [ ] Dynamic routing based on peer availability
+### 🔄 Phase 2: Multi-Hop BLE Mesh — `v0.2.0` (current)
+- [x] Bluetooth 5.0 LE transport layer
+- [x] GATT service/characteristic protocol
+- [x] Peer discovery and auto-connection
+- [x] MTU negotiation for optimal chunk sizes
+- [x] Chunked message transfer protocol
+- [x] Multi-hop relay with TTL
+- [x] Deduplication cache (500 entries)
+- [x] Probabilistic relay (70% forward rate)
+- [x] Auto-reconnect with exponential backoff
+- [ ] Wi-Fi Direct transport adapter
+- [ ] Transport abstraction layer (pluggable transports)
+- [ ] Network topology visualization
 
-### 🔮 Phase 3: Hybrid Cloud Integration
-- [ ] Optional internet fallback when available
+### 📋 Phase 3: Hybrid Cloud Bridge
+- [ ] Optional internet fallback when connectivity returns
 - [ ] Lightweight cloud relay (Firebase or custom API)
-- [ ] Seamless offline-to-online sync
-- [ ] Message delivery acknowledgments
+- [ ] Seamless offline-to-online message sync
+- [ ] Delivery acknowledgments and read receipts
+- [ ] Cross-mesh bridging (connect isolated mesh networks via internet)
 
-### 🛡️ Phase 4: Optimization & Security
-- [ ] Public-key cryptography (libsodium/tweetnacl)
-- [ ] Secure key exchange protocol
-- [ ] Battery optimization for long-term disaster use
-- [ ] User authentication system
-- [ ] Message verification and integrity checks
-- [ ] File attachment support (images, audio)
+### 📋 Phase 4: Security Hardening & Optimization
+- [ ] Public-key cryptography (libsodium / tweetnacl)
+- [ ] X25519 ECDH key exchange
+- [ ] Perfect forward secrecy
+- [ ] HMAC message authentication
+- [ ] Hardware keystore integration (iOS Keychain / Android Keystore)
+- [ ] Battery optimization strategies
+- [ ] User authentication
+- [ ] File attachments (images, audio, documents)
 
----
-
-## 🔐 Security Notes
-
-**Phase 1 Security Model:**
-- Uses symmetric AES-256 encryption
-- Keys stored locally in AsyncStorage (not encrypted at rest)
-- Default dev key for fallback (change in production!)
-
-**Roadmap:**
-- Phase 2 will add public-key infrastructure
-- Phase 4 will implement secure key exchange (X25519 ECDH)
-- Consider hardware security modules for production deployments
+### 📋 Phase 5: Humanitarian Features
+- [ ] 🆘 SOS Beacon — one-tap distress signal with GPS
+- [ ] 🔊 Voice messages — compressed audio through mesh
+- [ ] 👥 Group channels — named groups with per-channel encryption
+- [ ] 📋 Emergency templates — "I'm safe", "Need help", "Trapped at [location]"
+- [ ] 🌍 Offline translation — pre-loaded phrase packs
+- [ ] 📸 Image transfer — compressed photos through mesh
+- [ ] 📍 BLE RSSI positioning — GPS-less approximate location
 
 ---
 
-## 🧪 Testing
+## 🔐 Security Model
 
-```powershell
-# Type check
-npx tsc --noEmit
+### Current State (Phase 1-2)
 
-# Run unit tests (when added)
-npm test
+| Protection Level | Details |
+|-----------------|---------|
+| ✅ **Encrypted in transit** | AES-256 symmetric encryption on all messages |
+| ✅ **Integrity verified** | SHA-256 checksums detect tampering |
+| ✅ **Unique identities** | Per-device cryptographic IDs |
+| ✅ **Replay suppression** | Deduplication cache prevents message replay |
+| ⚠️ **Keys at rest** | Stored in AsyncStorage (OS-level protection only) |
+| ⚠️ **No forward secrecy** | Same key encrypts all messages |
+| ⚠️ **Symmetric only** | No public-key infrastructure yet |
+| ❌ **No key exchange** | Peers must pre-share keys |
 
-# Run on Android
-npm run android
+### Planned (Phase 4)
 
-# Run on iOS
-npm run ios
-```
+- Public-key cryptography with libsodium
+- X25519 ECDH key exchange
+- Hardware security module integration
+- Perfect forward secrecy
+- HMAC message authentication codes
 
----
-
-## 📦 Dependencies
-
-**Core:**
-- `expo` — React Native framework
-- `react-native` — Mobile app platform
-- `@react-native-async-storage/async-storage` — Persistent storage
-
-**Crypto:**
-- `crypto-js` — AES encryption and hashing
-- `uuid` — Unique message and device IDs
-
-**Future (Phase 2):**
-- `react-native-ble-plx` — Bluetooth LE
-- `react-native-wifi-p2p` — Wi-Fi Direct (Android)
-- `tweetnacl` or `libsodium-wrappers` — Public-key crypto
+> ⚠️ **CYPHR is currently in development.** The encryption is functional but not yet hardened for adversarial environments. See [SECURITY.md](SECURITY.md) for full details.
 
 ---
 
 ## 🤝 Contributing
 
-CYPHR is built for humanitarian and emergency use cases. Contributions focused on:
-- Reliability and fault tolerance
-- Battery efficiency
-- Security hardening
-- Cross-platform compatibility
+CYPHR is built for humanity. We welcome contributions that improve:
 
-are especially welcome.
+- 🛡️ **Reliability** — fault tolerance and error recovery
+- 🔋 **Battery efficiency** — every milliamp matters in a disaster
+- 🔐 **Security** — hardening the encryption and key management
+- 📱 **Cross-platform** — iOS, Android, and edge cases
+- ♿ **Accessibility** — usable by everyone, including under extreme stress
+- 🌍 **Localization** — translated for global disaster response
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
+
+### Good First Issues
+
+Look for issues labeled [`good first issue`](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) to get started.
+
+---
+
+## 📦 Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Framework** | React Native + Expo |
+| **Language** | TypeScript (strict mode) |
+| **Encryption** | crypto-js (AES-256, SHA-256, PBKDF2) |
+| **BLE** | react-native-ble-plx |
+| **Storage** | @react-native-async-storage/async-storage |
+| **Events** | eventemitter3 |
+| **IDs** | uuid v4 |
 
 ---
 
 ## 📄 License
 
-MIT — Built as a lifeline for communication when all else fails.
+CYPHR is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
+
+This means:
+- ✅ You can use, modify, and distribute CYPHR freely
+- ✅ You can use it commercially
+- 📋 You **must** keep the source code open for any modifications
+- 📋 You **must** share source if you deploy it as a network service
+- 📋 You **must** include the license and copyright notice
+
+See [LICENSE](LICENSE) for the full text.
+
+> **Why AGPL?** CYPHR is built as a lifeline for when communication matters most. The AGPL ensures that improvements to this lifeline always remain freely available to everyone — no one can take this tool proprietary.
 
 ---
 
-## 🛠️ Development Notes
+## 🙏 Acknowledgments
 
-**Current State:**
-- Encryption and storage layers are production-ready
-- Mesh networking is simulated (prototype loops)
-- Real BLE/Wi-Fi Direct integration is Phase 2 priority
-
-**Next Steps:**
-1. Add `react-native-ble-plx` for Bluetooth LE
-2. Implement peer discovery service
-3. Build connection state manager
-4. Add TTL and relay count to message envelope
-5. Test multi-device mesh relay scenarios
-
-**Known Limitations:**
-- No real peer-to-peer transport yet (uses simulated delivery)
-- Keys stored in plain AsyncStorage (needs hardware security)
-- No battery optimization strategies implemented
-- iOS Wi-Fi Direct support limited (Apple restrictions)
+- Built with [React Native](https://reactnative.dev/) and [Expo](https://expo.dev/)
+- Encryption powered by [crypto-js](https://github.com/brix/crypto-js)
+- BLE transport via [react-native-ble-plx](https://github.com/dotintent/react-native-ble-plx)
+- Inspired by the resilience of communities who communicate when all else fails
 
 ---
 
-**CYPHR** — Communication when it matters most. 🌐🔐
+<p align="center">
+  <strong>CYPHR</strong> — Communication when it matters most. 🌐🔐
+</p>
+<p align="center">
+  <sub>Built for humanity. Open forever.</sub>
+</p>

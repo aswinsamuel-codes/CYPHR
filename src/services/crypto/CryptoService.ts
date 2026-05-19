@@ -5,8 +5,9 @@ import { v4 as uuidv4 } from 'uuid';
 // service provides a small, explicit API for generating and deriving keys so
 // future phases (public-key exchange) can be integrated without changing the
 // encrypt/decrypt contract.
-
-const DEFAULT_KEY = 'cyphr-dev-shared-key-change-me';
+//
+// SECURITY: All encrypt/decrypt operations require an explicit key parameter.
+// There is intentionally no default key to prevent accidental use of weak keys.
 
 export type EncryptedEnvelope = {
     id: string;
@@ -47,7 +48,8 @@ export const CryptoService = {
         return newKey;
     },
 
-    encryptMessage(plain: { text: string; senderId: string; recipientId: string | 'broadcast' }, key: string = DEFAULT_KEY): EncryptedEnvelope {
+    encryptMessage(plain: { text: string; senderId: string; recipientId: string | 'broadcast' }, key: string): EncryptedEnvelope {
+        if (!key) throw new Error('[CryptoService] Encryption key is required. Call initializeDeviceKey() first.');
         const id = uuidv4();
         const timestamp = Date.now();
         const payload = JSON.stringify({ id, text: plain.text, timestamp, senderId: plain.senderId, recipientId: plain.recipientId });
@@ -56,7 +58,8 @@ export const CryptoService = {
         return { id, checksum, ciphertext, timestamp, senderId: plain.senderId, recipientId: plain.recipientId, hops: [], relayCount: 0, ttl: 8 };
     },
 
-    decryptMessage(envelope: EncryptedEnvelope, key: string = DEFAULT_KEY): { id: string; text: string; timestamp: number; senderId: string; recipientId: string | 'broadcast' } | null {
+    decryptMessage(envelope: EncryptedEnvelope, key: string): { id: string; text: string; timestamp: number; senderId: string; recipientId: string | 'broadcast' } | null {
+        if (!key) throw new Error('[CryptoService] Decryption key is required. Call initializeDeviceKey() first.');
         const checksum = CryptoJS.SHA256(envelope.ciphertext).toString();
         if (checksum !== envelope.checksum) return null;
         try {

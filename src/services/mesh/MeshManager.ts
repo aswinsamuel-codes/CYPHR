@@ -111,8 +111,8 @@ export class MeshManager {
 	}
 
 	async sendText(text: string, recipientId: string | 'broadcast' = 'broadcast'): Promise<ChatMessage> {
-		const key = this.deviceKey || undefined;
-		const envelope = CryptoService.encryptMessage({ text, senderId: this.deviceId, recipientId }, key);
+		if (!this.deviceKey) throw new Error('[MeshManager] Device key not initialized. Call start() first.');
+		const envelope = CryptoService.encryptMessage({ text, senderId: this.deviceId, recipientId }, this.deviceKey);
 		console.log('[MeshManager] Envelope created — id:', envelope.id, 'recipient:', recipientId, 'ttl:', envelope.ttl);
 		// Mark our own outbound messages as seen so we don't process them if echoed back
 		this.addToDedup(envelope.id);
@@ -163,8 +163,11 @@ export class MeshManager {
 
 		// ── Step 2: Deliver locally if addressed to us (or broadcast) ─
 		if (isForUs || isBroadcast) {
-			const key = this.deviceKey || undefined;
-			const decrypted = CryptoService.decryptMessage(envelope, key);
+			if (!this.deviceKey) {
+				console.warn('[MeshManager] Cannot decrypt — device key not initialized');
+				return;
+			}
+			const decrypted = CryptoService.decryptMessage(envelope, this.deviceKey);
 			if (decrypted) {
 				const msg: ChatMessage = {
 					id: decrypted.id,

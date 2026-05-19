@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "PulseNet",
-    "slug": "pulsenet",
-    "version": "0.1.0",
+    "name": "CYPHR",
+    "slug": "cyphr",
+    "version": "0.2.0",
     "orientation": "portrait",
     "splash": {
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0a0a0a"
     },
     "updates": {
       "fallbackToCacheTimeout": 0
@@ -15,10 +15,15 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "CYPHR uses Bluetooth to create mesh networks for offline communication during emergencies.",
+        "NSBluetoothPeripheralUsageDescription": "CYPHR uses Bluetooth to discover and connect to nearby mesh nodes.",
+        "NSLocalNetworkUsageDescription": "CYPHR uses local networking for peer-to-peer mesh communication."
+      }
     },
     "android": {
-      "package": "com.mesh.pulsenet",
+      "package": "com.cyphr.mesh",
       "permissions": [
         "BLUETOOTH",
         "BLUETOOTH_ADMIN",
@@ -50,11 +55,6 @@
           "bluetoothAlwaysPermission": "Allow CYPHR to connect to nearby mesh nodes using Bluetooth."
         }
       ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "b81fc61d-baa9-4a72-9663-bad378c21376"
-      }
-    }
+    ]
   }
 }

@@ -1,14 +1,37 @@
 {
-  "name": "pulsenet",
+  "name": "cyphr-mesh",
   "version": "0.1.0",
-  "private": true,
+  "description": "Offline-first peer-to-peer mesh communication for disaster relief and emergency response",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyphr-mesh/cyphr.git"
+  },
+  "homepage": "https://github.com/cyphr-mesh/cyphr#readme",
+  "bugs": {
+    "url": "https://github.com/cyphr-mesh/cyphr/issues"
+  },
+  "author": "CYPHR Contributors",
+  "keywords": [
+    "mesh",
+    "offline",
+    "peer-to-peer",
+    "bluetooth",
+    "disaster-relief",
+    "emergency",
+    "encrypted",
+    "communication"
+  ],
   "main": "index.js",
   "scripts": {
     "start": "expo start --clear",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "prebuild": "expo prebuild"
+    "prebuild": "expo prebuild",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -33,8 +56,10 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@types/crypto-js": "^4.2.2",
+    "@types/jest": "^29.5.0",
     "@types/react": "~19.1.10",
     "@types/uuid": "^8.3.4",
+    "jest": "^29.7.0",
     "typescript": "~5.9.2"
   }
 }
