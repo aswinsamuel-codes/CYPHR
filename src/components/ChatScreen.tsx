@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View, Alert, StyleSheet, ScrollView } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View, Alert, StyleSheet, ScrollView, Linking } from 'react-native';
 import type { MeshManager } from '@/services/mesh/MeshManager';
 import { Storage } from '@/services/storage/Storage';
 import { format } from 'date-fns';
@@ -93,6 +93,18 @@ const parseSOSMessage = (text: string): SOSDetails => {
 		coords: { lat, lng, alt, acc, battery },
 		message: message || 'Emergency distress signal broadcasted!'
 	};
+};
+
+// Opens coordinates in the native maps application
+const openMap = (lat: string, lng: string) => {
+	const url = Platform.select({
+		ios: `maps:0,0?q=${lat},${lng}`,
+		android: `geo:0,0?q=${lat},${lng}`,
+		default: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+	});
+	if (url) {
+		Linking.openURL(url).catch(() => Alert.alert('Maps Error', 'Could not open the maps application.'));
+	}
 };
 
 // Parses voice message envelopes
@@ -511,6 +523,10 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 							<Text style={styles.sosBatteryText}>🔋 Node Battery Level: {parsedSOS.coords.battery}</Text>
 						</View>
 					)}
+
+					<TouchableOpacity style={styles.mapButton} onPress={() => openMap(parsedSOS.coords!.lat, parsedSOS.coords!.lng)}>
+						<Text style={styles.mapButtonText}>📍 Navigate to Coordinates</Text>
+					</TouchableOpacity>
 
 					<View style={styles.sosCardFooter}>
 						<Text style={styles.sosTimeText}>{format(item.timestamp, 'PP pp')}</Text>
@@ -955,6 +971,22 @@ const styles = StyleSheet.create({
 		color: '#f59e0b',
 		fontSize: 11,
 		fontWeight: '700',
+	},
+	mapButton: {
+		backgroundColor: 'rgba(239, 68, 68, 0.15)',
+		borderWidth: 1,
+		borderColor: 'rgba(239, 68, 68, 0.4)',
+		borderRadius: 8,
+		paddingVertical: 10,
+		marginTop: 10,
+		justifyContent: 'center',
+		alignItems: 'center',
+	},
+	mapButtonText: {
+		color: '#fca5a5',
+		fontSize: 12,
+		fontWeight: '700',
+		letterSpacing: 0.5,
 	},
 	sosCardFooter: {
 		flexDirection: 'row',
