@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Text, TouchableOpacity, View, StyleSheet, Platform } from 'react-native';
 import type { MeshManager } from '@/services/mesh/MeshManager';
 
 type Props = {
@@ -49,37 +49,42 @@ export const DeviceInfoHeader: React.FC<Props> = ({ meshManager }) => {
 
 const styles = StyleSheet.create({
 	container: {
-		backgroundColor: '#f7f7f7',
+		backgroundColor: '#18181b',
 		borderBottomWidth: 1,
-		borderBottomColor: '#ddd',
-		paddingHorizontal: 12,
-		paddingVertical: 10,
+		borderBottomColor: '#27272a',
+		paddingHorizontal: 16,
+		paddingVertical: 12,
 	},
 	row: {
 		flexDirection: 'row',
-		marginBottom: 4,
+		marginBottom: 6,
+		alignItems: 'center',
 	},
 	label: {
 		fontSize: 12,
 		fontWeight: '600',
-		color: '#333',
-		marginRight: 6,
+		color: '#a1a1aa',
+		marginRight: 8,
+		width: 70,
 	},
 	value: {
 		fontSize: 12,
-		color: '#666',
-		fontFamily: 'monospace',
+		color: '#f4f4f5',
+		fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+		fontWeight: '500',
 	},
 	button: {
-		marginTop: 8,
-		backgroundColor: '#0a84ff',
+		marginTop: 6,
+		backgroundColor: '#27272a',
+		borderWidth: 1,
+		borderColor: '#3f3f46',
 		paddingVertical: 6,
 		paddingHorizontal: 12,
 		borderRadius: 6,
 		alignSelf: 'flex-start',
 	},
 	buttonText: {
-		color: '#fff',
+		color: '#e4e4e7',
 		fontSize: 12,
 		fontWeight: '600',
 	},

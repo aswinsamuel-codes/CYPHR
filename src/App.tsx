@@ -17,8 +17,8 @@ export default function App() {
 	}, []);
 
 	return (
-		<SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-			<StatusBar barStyle="dark-content" />
+		<SafeAreaView style={{ flex: 1, backgroundColor: '#09090b' }}>
+			<StatusBar barStyle="light-content" backgroundColor="#09090b" />
 			<DeviceInfoHeader meshManager={meshManager} />
 			<ChatScreen meshManager={meshManager} storage={Storage} />
 		</SafeAreaView>
