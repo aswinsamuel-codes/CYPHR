@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View, Alert, StyleSheet } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View, Alert, StyleSheet, ScrollView } from 'react-native';
 import type { MeshManager } from '@/services/mesh/MeshManager';
 import { Storage } from '@/services/storage/Storage';
 import { format } from 'date-fns';
@@ -29,6 +29,15 @@ interface SOSDetails {
 	} | null;
 	message: string;
 }
+
+const CHANNELS = [
+	{ id: 'general', name: 'GENERAL', color: '#3b82f6' }, // Blue
+	{ id: 'rescue', name: 'RESCUE', color: '#ef4444' },   // Red
+	{ id: 'medical', name: 'MEDICAL', color: '#10b981' }, // Green
+	{ id: 'supplies', name: 'SUPPLIES', color: '#f59e0b' }, // Amber
+] as const;
+
+type ChannelId = typeof CHANNELS[number]['id'];
 
 // Parses the structured SOS Beacon text format safely
 const parseSOSMessage = (text: string): SOSDetails => {
@@ -63,7 +72,6 @@ const parseSOSMessage = (text: string): SOSDetails => {
 	};
 };
 
-// Simple pulsing-like dot indicator component using standard CSS style/state
 const PulsingDot: React.FC = () => {
 	const [active, setActive] = useState(true);
 
@@ -89,6 +97,7 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 	const [input, setInput] = useState('');
 	const [deviceId] = useState(meshManager.getDeviceId());
 	const [isLocating, setIsLocating] = useState(false);
+	const [activeChannel, setActiveChannel] = useState<ChannelId>('general');
 	const inputRef = useRef<TextInput | null>(null);
 
 	useEffect(() => {
@@ -116,7 +125,8 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 		const text = input.trim();
 		if (!text) return;
 		setInput('');
-		const msg = await meshManager.sendText(text);
+		// Route message to active channel room
+		const msg = await meshManager.sendText(text, `channel-${activeChannel}`);
 		await storage.saveMessage(msg);
 		setMessages((prev) => [msg, ...prev]);
 	};
@@ -172,6 +182,23 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 		);
 	};
 
+	// Filters messages according to selection, bypassing for SOS Beacons
+	const filteredMessages = messages.filter((msg) => {
+		const parsed = parseSOSMessage(msg.text);
+		if (parsed.isSos) return true; // Safety first: SOS is shown everywhere!
+
+		// Show private direct messages
+		if (msg.recipientId === deviceId) return true;
+
+		// Match active channel ID
+		if (msg.recipientId === `channel-${activeChannel}`) return true;
+
+		// Support backwards compatibility for legacy general broadcasts
+		if (activeChannel === 'general' && msg.recipientId === 'broadcast') return true;
+
+		return false;
+	});
+
 	const renderItem = ({ item }: { item: ChatMessage }) => {
 		const isMe = item.senderId === deviceId;
 		const parsed = parseSOSMessage(item.text);
@@ -224,11 +251,17 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 			);
 		}
 
-		// Render Premium Regular Chat Message Bubble (Left/Right Layout)
+		const isPrivate = item.recipientId === deviceId;
+		const bubbleStyle = isMe ? styles.bubbleRight : styles.bubbleLeft;
+
+		// Render Premium Regular Chat Message Bubble
 		return (
 			<View style={[styles.messageRow, isMe ? styles.messageRowRight : styles.messageRowLeft]}>
-				{!isMe && <Text style={styles.peerIdLabel}>{item.senderId.slice(0, 10)}</Text>}
-				<View style={[styles.messageBubble, isMe ? styles.bubbleRight : styles.bubbleLeft]}>
+				<View style={styles.messageHeaderRow}>
+					{!isMe && <Text style={styles.peerIdLabel}>{item.senderId.slice(0, 10)}</Text>}
+					{isPrivate && <Text style={styles.privateBadge}>🔒 PRIVATE</Text>}
+				</View>
+				<View style={[styles.messageBubble, bubbleStyle]}>
 					<Text style={styles.messageText}>{item.text}</Text>
 					<View style={styles.messageMeta}>
 						<Text style={styles.metaTimeText}>{format(item.timestamp, 'p')}</Text>
@@ -241,8 +274,32 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 
 	return (
 		<KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
+			{/* Channel Selector Bar */}
+			<View style={styles.channelBarContainer}>
+				<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.channelScroll}>
+					{CHANNELS.map((ch) => {
+						const isActive = activeChannel === ch.id;
+						return (
+							<TouchableOpacity
+								key={ch.id}
+								onPress={() => setActiveChannel(ch.id)}
+								style={[
+									styles.channelPill,
+									isActive ? { borderColor: ch.color, backgroundColor: 'rgba(255, 255, 255, 0.05)' } : styles.channelPillInactive
+								]}
+							>
+								<View style={[styles.channelDot, { backgroundColor: ch.color }]} />
+								<Text style={[styles.channelText, isActive ? styles.channelTextActive : styles.channelTextInactive]}>
+									{ch.name}
+								</Text>
+							</TouchableOpacity>
+						);
+					})}
+				</ScrollView>
+			</View>
+
 			<FlatList
-				data={messages}
+				data={filteredMessages}
 				keyExtractor={(item) => item.id}
 				renderItem={renderItem}
 				contentContainerStyle={styles.listContainer}
@@ -260,7 +317,7 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 					ref={inputRef}
 					value={input}
 					onChangeText={(t) => setInput(t.slice(0, 200))}
-					placeholder={isLocating ? 'Fetching GPS coordinates...' : 'Type offline message...'}
+					placeholder={isLocating ? 'Fetching GPS coordinates...' : `Message #${activeChannel}...`}
 					placeholderTextColor="#71717a"
 					style={styles.textInput}
 					editable={!isLocating}
@@ -285,9 +342,48 @@ const styles = StyleSheet.create({
 		flex: 1,
 		backgroundColor: '#09090b',
 	},
+	channelBarContainer: {
+		backgroundColor: '#09090b',
+		borderBottomWidth: 1,
+		borderBottomColor: '#27272a',
+		paddingVertical: 8,
+	},
+	channelScroll: {
+		paddingHorizontal: 12,
+	},
+	channelPill: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		paddingHorizontal: 12,
+		paddingVertical: 6,
+		borderRadius: 20,
+		marginRight: 8,
+		borderWidth: 1,
+	},
+	channelPillInactive: {
+		backgroundColor: '#18181b',
+		borderColor: '#27272a',
+	},
+	channelDot: {
+		width: 6,
+		height: 6,
+		borderRadius: 3,
+		marginRight: 6,
+	},
+	channelText: {
+		fontSize: 11,
+		fontWeight: '700',
+		letterSpacing: 0.5,
+	},
+	channelTextActive: {
+		color: '#fafafa',
+	},
+	channelTextInactive: {
+		color: '#71717a',
+	},
 	listContainer: {
 		paddingHorizontal: 16,
-		paddingTop: 16,
+		paddingTop: 8,
 		paddingBottom: 90,
 	},
 	messageRow: {
@@ -302,12 +398,26 @@ const styles = StyleSheet.create({
 		alignSelf: 'flex-end',
 		alignItems: 'flex-end',
 	},
+	messageHeaderRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		marginBottom: 3,
+	},
 	peerIdLabel: {
 		color: '#71717a',
 		fontSize: 11,
-		marginBottom: 3,
 		marginLeft: 4,
 		fontFamily: 'monospace',
+	},
+	privateBadge: {
+		color: '#f59e0b',
+		fontSize: 9,
+		fontWeight: '700',
+		marginLeft: 6,
+		backgroundColor: 'rgba(245,158,11,0.1)',
+		paddingHorizontal: 4,
+		paddingVertical: 1,
+		borderRadius: 4,
 	},
 	messageBubble: {
 		borderRadius: 16,
