@@ -21,7 +21,8 @@
         "NSBluetoothPeripheralUsageDescription": "CYPHR uses Bluetooth to discover and connect to nearby mesh nodes.",
         "NSLocalNetworkUsageDescription": "CYPHR uses local networking for peer-to-peer mesh communication.",
         "NSLocationWhenInUseUsageDescription": "CYPHR needs access to your location to share coordinates when you broadcast an SOS beacon.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "CYPHR needs location access to broadcast SOS beacons even when the app is backgrounded."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "CYPHR needs location access to broadcast SOS beacons even when the app is backgrounded.",
+        "NSMicrophoneUsageDescription": "CYPHR needs microphone access to record voice messages for mesh broadcasting."
       }
     },
     "android": {
@@ -36,6 +37,8 @@
         "ACCESS_WIFI_STATE",
         "CHANGE_WIFI_STATE",
         "NEARBY_WIFI_DEVICES",
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT"

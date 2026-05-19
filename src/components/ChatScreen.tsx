@@ -4,6 +4,8 @@ import type { MeshManager } from '@/services/mesh/MeshManager';
 import { Storage } from '@/services/storage/Storage';
 import { format } from 'date-fns';
 import * as Location from 'expo-location';
+import { Audio } from 'expo-av';
+import { cacheDirectory, EncodingType, readAsStringAsync, writeAsStringAsync } from 'expo-file-system/legacy';
 
 type Props = {
 	meshManager: MeshManager;
@@ -30,6 +32,12 @@ interface SOSDetails {
 	message: string;
 }
 
+interface VoiceDetails {
+	isVoice: boolean;
+	duration: number;
+	audioBase64: string | null;
+}
+
 const CHANNELS = [
 	{ id: 'general', name: 'GENERAL', color: '#3b82f6' }, // Blue
 	{ id: 'rescue', name: 'RESCUE', color: '#ef4444' },   // Red
@@ -38,6 +46,9 @@ const CHANNELS = [
 ] as const;
 
 type ChannelId = typeof CHANNELS[number]['id'];
+
+// Waveform visualizer heights for premium aesthetics
+const WAVE_BARS = [6, 12, 18, 10, 8, 14, 22, 16, 8, 12, 18, 14, 10, 16, 12, 6, 10, 8, 4];
 
 // Parses the structured SOS Beacon text format safely
 const parseSOSMessage = (text: string): SOSDetails => {
@@ -72,6 +83,26 @@ const parseSOSMessage = (text: string): SOSDetails => {
 	};
 };
 
+// Parses voice message envelopes
+const parseVoiceMessage = (text: string): VoiceDetails => {
+	const isVoice = text.startsWith('🎵 [VOICE MESSAGE] 🚨');
+	if (!isVoice) return { isVoice: false, duration: 0, audioBase64: null };
+
+	const lines = text.split('\n');
+	let duration = 0;
+	let audioBase64 = '';
+
+	for (const line of lines) {
+		if (line.startsWith('Duration:')) {
+			duration = parseInt(line.replace('Duration:', '').trim(), 10) || 0;
+		} else if (line.startsWith('Audio:')) {
+			audioBase64 = line.replace('Audio:', '').trim();
+		}
+	}
+
+	return { isVoice: true, duration, audioBase64: audioBase64 || null };
+};
+
 const PulsingDot: React.FC = () => {
 	const [active, setActive] = useState(true);
 
@@ -98,7 +129,16 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 	const [deviceId] = useState(meshManager.getDeviceId());
 	const [isLocating, setIsLocating] = useState(false);
 	const [activeChannel, setActiveChannel] = useState<ChannelId>('general');
+	
+	// Voice recording states
+	const [recording, setRecording] = useState<Audio.Recording | null>(null);
+	const [isRecording, setIsRecording] = useState(false);
+	const [recordingDuration, setRecordingDuration] = useState(0);
+	const [currentlyPlayingMsgId, setCurrentlyPlayingMsgId] = useState<string | null>(null);
+	
 	const inputRef = useRef<TextInput | null>(null);
+	const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+	const activeSoundRef = useRef<Audio.Sound | null>(null);
 
 	useEffect(() => {
 		const init = async () => {
@@ -118,6 +158,12 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 		return () => {
 			unsubIncoming();
 			unsubStatus();
+			if (activeSoundRef.current) {
+				activeSoundRef.current.unloadAsync().catch(() => {});
+			}
+			if (recordingTimerRef.current) {
+				clearInterval(recordingTimerRef.current);
+			}
 		};
 	}, [meshManager, storage]);
 
@@ -125,7 +171,6 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 		const text = input.trim();
 		if (!text) return;
 		setInput('');
-		// Route message to active channel room
 		const msg = await meshManager.sendText(text, `channel-${activeChannel}`);
 		await storage.saveMessage(msg);
 		setMessages((prev) => [msg, ...prev]);
@@ -182,10 +227,164 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 		);
 	};
 
-	// Filters messages according to selection, bypassing for SOS Beacons
+	// ── Recording Helpers ─────────────────────────────────────────────
+
+	const startRecording = async () => {
+		try {
+			const permission = await Audio.requestPermissionsAsync();
+			if (permission.status !== 'granted') {
+				Alert.alert('Microphone Denied', 'Microphone recording permissions are required to share voice notes offline.');
+				return;
+			}
+
+			await Audio.setAudioModeAsync({
+				allowsRecordingIOS: true,
+				playsInSilentModeIOS: true,
+			});
+
+			const { recording: newRecording } = await Audio.Recording.createAsync({
+				android: {
+					extension: '.m4a',
+					outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+					audioEncoder: Audio.AndroidAudioEncoder.AAC,
+					sampleRate: 8000,
+					numberOfChannels: 1,
+					bitRate: 12200,
+				},
+				ios: {
+					extension: '.m4a',
+					audioQuality: Audio.IOSAudioQuality.MIN,
+					sampleRate: 8000,
+					numberOfChannels: 1,
+					bitRate: 12200,
+					linearPCMBitDepth: 16,
+					linearPCMIsBigEndian: false,
+					linearPCMIsFloat: false,
+				},
+				web: {}
+			});
+
+			setRecording(newRecording);
+			setIsRecording(true);
+			setRecordingDuration(0);
+
+			recordingTimerRef.current = setInterval(() => {
+				setRecordingDuration((prev) => {
+					if (prev >= 9) {
+						clearInterval(recordingTimerRef.current!);
+						recordingTimerRef.current = null;
+						// Trigger stop recording asynchronously
+						stopRecording(newRecording, 10);
+						return 10;
+					}
+					return prev + 1;
+				});
+			}, 1000);
+		} catch (err: any) {
+			Alert.alert('Recording Failure', 'Could not start recording session: ' + err.message);
+		}
+	};
+
+	const cancelRecording = async () => {
+		if (recordingTimerRef.current) {
+			clearInterval(recordingTimerRef.current);
+			recordingTimerRef.current = null;
+		}
+		if (recording) {
+			try {
+				await recording.stopAndUnloadAsync();
+			} catch {}
+			setRecording(null);
+		}
+		setIsRecording(false);
+	};
+
+	const stopRecording = async (activeRecording?: Audio.Recording | null, forcedDuration?: number) => {
+		const recToStop = activeRecording !== undefined ? activeRecording : recording;
+		if (recordingTimerRef.current) {
+			clearInterval(recordingTimerRef.current);
+			recordingTimerRef.current = null;
+		}
+		if (!recToStop) {
+			setIsRecording(false);
+			return;
+		}
+
+		setIsRecording(false);
+		setRecording(null);
+
+		try {
+			await recToStop.stopAndUnloadAsync();
+			await Audio.setAudioModeAsync({
+				allowsRecordingIOS: false,
+				playsInSilentModeIOS: true,
+			});
+
+			const uri = recToStop.getURI();
+			if (!uri) throw new Error('Recording URI is invalid.');
+
+			const duration = forcedDuration || recordingDuration || 1;
+			const base64Data = await readAsStringAsync(uri, {
+				encoding: EncodingType.Base64,
+			});
+
+			const formattedText = `🎵 [VOICE MESSAGE] 🚨\nDuration: ${duration}\nAudio: ${base64Data}`;
+			
+			const msg = await meshManager.sendText(formattedText, `channel-${activeChannel}`);
+			await storage.saveMessage(msg);
+			setMessages((prev) => [msg, ...prev]);
+		} catch (err: any) {
+			Alert.alert('Save Failure', 'Failed to compile or transmit audio message: ' + err.message);
+		}
+	};
+
+	// ── Playback Helpers ──────────────────────────────────────────────
+
+	const playVoice = async (msgId: string, base64Data: string) => {
+		try {
+			if (activeSoundRef.current) {
+				await activeSoundRef.current.stopAsync();
+				await activeSoundRef.current.unloadAsync();
+				activeSoundRef.current = null;
+			}
+
+			// Toggling play/stop
+			if (currentlyPlayingMsgId === msgId) {
+				setCurrentlyPlayingMsgId(null);
+				return;
+			}
+
+			setCurrentlyPlayingMsgId(msgId);
+
+			const tempUri = `${cacheDirectory}voice_${msgId}.m4a`;
+			await writeAsStringAsync(tempUri, base64Data, {
+				encoding: EncodingType.Base64,
+			});
+
+			const { sound } = await Audio.Sound.createAsync(
+				{ uri: tempUri },
+				{ shouldPlay: true }
+			);
+
+			activeSoundRef.current = sound;
+
+			sound.setOnPlaybackStatusUpdate((status) => {
+				if (status.isLoaded && status.didJustFinish) {
+					sound.unloadAsync().catch(() => {});
+					activeSoundRef.current = null;
+					setCurrentlyPlayingMsgId(null);
+				}
+			});
+		} catch (err: any) {
+			Alert.alert('Playback Error', 'Failed to play audio note: ' + err.message);
+			setCurrentlyPlayingMsgId(null);
+		}
+	};
+
+	// Filters messages according to channel selection, bypassing for SOS Beacons
 	const filteredMessages = messages.filter((msg) => {
-		const parsed = parseSOSMessage(msg.text);
-		if (parsed.isSos) return true; // Safety first: SOS is shown everywhere!
+		const parsedSOS = parseSOSMessage(msg.text);
+		if (parsedSOS.isSos) return true; // Safety override
 
 		// Show private direct messages
 		if (msg.recipientId === deviceId) return true;
@@ -201,10 +400,12 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 
 	const renderItem = ({ item }: { item: ChatMessage }) => {
 		const isMe = item.senderId === deviceId;
-		const parsed = parseSOSMessage(item.text);
+		const isPrivate = item.recipientId === deviceId;
+		const parsedSOS = parseSOSMessage(item.text);
+		const parsedVoice = parseVoiceMessage(item.text);
 
-		if (parsed.isSos && parsed.coords) {
-			// Render Premium SOS Emergency Beacon Card
+		// 1. SOS Beacon Card
+		if (parsedSOS.isSos && parsedSOS.coords) {
 			return (
 				<View style={styles.sosCard}>
 					<View style={styles.sosHeader}>
@@ -219,27 +420,27 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 						Node ID: <Text style={{ fontFamily: 'monospace' }}>{item.senderId}</Text>
 					</Text>
 
-					<Text style={styles.sosMessageBody}>{parsed.message}</Text>
+					<Text style={styles.sosMessageBody}>{parsedSOS.message}</Text>
 
 					<View style={styles.coordsGrid}>
 						<View style={styles.coordCol}>
 							<Text style={styles.coordLabel}>LATITUDE</Text>
-							<Text style={styles.coordValue}>{parsed.coords.lat}</Text>
+							<Text style={styles.coordValue}>{parsedSOS.coords.lat}</Text>
 						</View>
 						<View style={styles.coordCol}>
 							<Text style={styles.coordLabel}>LONGITUDE</Text>
-							<Text style={styles.coordValue}>{parsed.coords.lng}</Text>
+							<Text style={styles.coordValue}>{parsedSOS.coords.lng}</Text>
 						</View>
 					</View>
 
 					<View style={[styles.coordsGrid, { marginTop: 6, borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.1)', paddingTop: 6 }]}>
 						<View style={styles.coordCol}>
 							<Text style={styles.coordLabel}>ALTITUDE</Text>
-							<Text style={styles.coordValue}>{parsed.coords.alt}</Text>
+							<Text style={styles.coordValue}>{parsedSOS.coords.alt}</Text>
 						</View>
 						<View style={styles.coordCol}>
 							<Text style={styles.coordLabel}>ACCURACY</Text>
-							<Text style={styles.coordValue}>{parsed.coords.acc}</Text>
+							<Text style={styles.coordValue}>{parsedSOS.coords.acc}</Text>
 						</View>
 					</View>
 
@@ -251,10 +452,53 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 			);
 		}
 
-		const isPrivate = item.recipientId === deviceId;
+		// 2. Voice Message Card
+		if (parsedVoice.isVoice && parsedVoice.audioBase64) {
+			const isPlaying = currentlyPlayingMsgId === item.id;
+			const cardStyle = isMe ? styles.voiceCardRight : styles.voiceCardLeft;
+
+			return (
+				<View style={[styles.voiceCard, cardStyle]}>
+					<View style={styles.voiceCardHeader}>
+						<Text style={styles.voiceSenderLabel}>{isMe ? 'You' : item.senderId.slice(0, 10)} • Voice Note</Text>
+						{isPrivate && <Text style={styles.privateBadge}>🔒 PRIVATE</Text>}
+					</View>
+
+					<View style={styles.voicePlayerRow}>
+						<TouchableOpacity
+							onPress={() => playVoice(item.id, parsedVoice.audioBase64!)}
+							style={[styles.playButton, isPlaying && styles.stopButtonColor]}
+						>
+							<Text style={styles.playButtonText}>{isPlaying ? '◼' : '▶'}</Text>
+						</TouchableOpacity>
+
+						<View style={styles.waveformContainer}>
+							{WAVE_BARS.map((h, i) => (
+								<View
+									key={i}
+									style={[
+										styles.waveBar,
+										{ height: h },
+										isPlaying && { backgroundColor: '#38bdf8' }
+									]}
+								/>
+							))}
+						</View>
+
+						<Text style={styles.voiceDuration}>{parsedVoice.duration}s</Text>
+					</View>
+
+					<View style={styles.voiceCardFooter}>
+						<Text style={styles.voiceTimeText}>{format(item.timestamp, 'p')}</Text>
+						{isMe && <Text style={styles.voiceStatusText}>{item.status}</Text>}
+					</View>
+				</View>
+			);
+		}
+
 		const bubbleStyle = isMe ? styles.bubbleRight : styles.bubbleLeft;
 
-		// Render Premium Regular Chat Message Bubble
+		// 3. Regular Text Message Bubble
 		return (
 			<View style={[styles.messageRow, isMe ? styles.messageRowRight : styles.messageRowLeft]}>
 				<View style={styles.messageHeaderRow}>
@@ -305,33 +549,65 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 				contentContainerStyle={styles.listContainer}
 				inverted
 			/>
+
+			{/* Input and Recording Controls */}
 			<View style={styles.inputBar}>
-				<TouchableOpacity
-					onPress={sendSOS}
-					disabled={isLocating}
-					style={[styles.sosButton, isLocating && { opacity: 0.5 }]}
-				>
-					<Text style={styles.sosButtonText}>{isLocating ? '...' : '🆘 SOS'}</Text>
-				</TouchableOpacity>
-				<TextInput
-					ref={inputRef}
-					value={input}
-					onChangeText={(t) => setInput(t.slice(0, 200))}
-					placeholder={isLocating ? 'Fetching GPS coordinates...' : `Message #${activeChannel}...`}
-					placeholderTextColor="#71717a"
-					style={styles.textInput}
-					editable={!isLocating}
-				/>
-				<TouchableOpacity
-					onPress={send}
-					disabled={isLocating || !input.trim()}
-					style={[
-						styles.sendButton,
-						(!input.trim() || isLocating) && styles.sendButtonDisabled
-					]}
-				>
-					<Text style={styles.sendButtonText}>Send</Text>
-				</TouchableOpacity>
+				{isRecording ? (
+					// Full width Recording Panel
+					<View style={styles.recordingPanel}>
+						<View style={{ flexDirection: 'row', alignItems: 'center' }}>
+							<View style={styles.recordingRedDot} />
+							<Text style={styles.recordingDurationText}>
+								Recording: 0:0{recordingDuration} / 0:10
+							</Text>
+						</View>
+						<View style={{ flexDirection: 'row' }}>
+							<TouchableOpacity onPress={cancelRecording} style={styles.cancelRecordingBtn}>
+								<Text style={styles.cancelRecordingBtnText}>Cancel</Text>
+							</TouchableOpacity>
+							<TouchableOpacity onPress={() => stopRecording()} style={styles.stopRecordingBtn}>
+								<Text style={styles.stopRecordingBtnText}>Send</Text>
+							</TouchableOpacity>
+						</View>
+					</View>
+				) : (
+					// Standard Input Bar
+					<>
+						<TouchableOpacity
+							onPress={sendSOS}
+							disabled={isLocating}
+							style={[styles.sosButton, isLocating && { opacity: 0.5 }]}
+						>
+							<Text style={styles.sosButtonText}>{isLocating ? '...' : '🆘 SOS'}</Text>
+						</TouchableOpacity>
+						<TouchableOpacity
+							onPress={startRecording}
+							disabled={isLocating}
+							style={[styles.micButton, isLocating && { opacity: 0.5 }]}
+						>
+							<Text style={styles.micButtonText}>🎙️</Text>
+						</TouchableOpacity>
+						<TextInput
+							ref={inputRef}
+							value={input}
+							onChangeText={(t) => setInput(t.slice(0, 200))}
+							placeholder={isLocating ? 'Fetching GPS coordinates...' : `Message #${activeChannel}...`}
+							placeholderTextColor="#71717a"
+							style={styles.textInput}
+							editable={!isLocating}
+						/>
+						<TouchableOpacity
+							onPress={send}
+							disabled={isLocating || !input.trim()}
+							style={[
+								styles.sendButton,
+								(!input.trim() || isLocating) && styles.sendButtonDisabled
+							]}
+						>
+							<Text style={styles.sendButtonText}>Send</Text>
+						</TouchableOpacity>
+					</>
+				)}
 			</View>
 		</KeyboardAvoidingView>
 	);
@@ -549,6 +825,93 @@ const styles = StyleSheet.create({
 		fontSize: 10,
 		fontWeight: '700',
 	},
+	// Voice Message Card Styles
+	voiceCard: {
+		borderRadius: 16,
+		paddingHorizontal: 12,
+		paddingVertical: 10,
+		marginVertical: 6,
+		minWidth: '65%',
+		maxWidth: '75%',
+		borderWidth: 1,
+	},
+	voiceCardLeft: {
+		alignSelf: 'flex-start',
+		backgroundColor: '#18181b',
+		borderColor: '#27272a',
+	},
+	voiceCardRight: {
+		alignSelf: 'flex-end',
+		backgroundColor: '#1e293b', // Muted slate-800 for outgoing voice
+		borderColor: '#334155',
+	},
+	voiceCardHeader: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		marginBottom: 6,
+	},
+	voiceSenderLabel: {
+		color: '#94a3b8',
+		fontSize: 10,
+		fontWeight: '600',
+	},
+	voicePlayerRow: {
+		flexDirection: 'row',
+		alignItems: 'center',
+	},
+	playButton: {
+		width: 32,
+		height: 32,
+		borderRadius: 16,
+		backgroundColor: '#3b82f6',
+		justifyContent: 'center',
+		alignItems: 'center',
+	},
+	stopButtonColor: {
+		backgroundColor: '#ef4444',
+	},
+	playButtonText: {
+		color: '#fff',
+		fontSize: 14,
+		fontWeight: '800',
+		marginLeft: Platform.OS === 'ios' ? 2 : 1,
+		marginTop: Platform.OS === 'ios' ? -1 : -2,
+	},
+	waveformContainer: {
+		flexDirection: 'row',
+		alignItems: 'center',
+		flex: 1,
+		marginHorizontal: 10,
+		height: 24,
+	},
+	waveBar: {
+		width: 2.5,
+		backgroundColor: '#64748b',
+		borderRadius: 1.5,
+		marginHorizontal: 1,
+	},
+	voiceDuration: {
+		color: '#94a3b8',
+		fontSize: 11,
+		fontWeight: '600',
+	},
+	voiceCardFooter: {
+		flexDirection: 'row',
+		justifyContent: 'flex-end',
+		marginTop: 6,
+		alignItems: 'center',
+	},
+	voiceTimeText: {
+		color: '#64748b',
+		fontSize: 9,
+		marginRight: 4,
+	},
+	voiceStatusText: {
+		color: '#93c5fd',
+		fontSize: 9,
+		fontWeight: '500',
+	},
 	// Input Bar Styles
 	inputBar: {
 		position: 'absolute',
@@ -579,6 +942,20 @@ const styles = StyleSheet.create({
 		fontWeight: '800',
 		fontSize: 13,
 	},
+	micButton: {
+		backgroundColor: '#27272a',
+		borderColor: '#3f3f46',
+		borderWidth: 1,
+		paddingHorizontal: 11,
+		paddingVertical: 9,
+		borderRadius: 10,
+		marginRight: 8,
+		justifyContent: 'center',
+		alignItems: 'center',
+	},
+	micButtonText: {
+		fontSize: 14,
+	},
 	textInput: {
 		flex: 1,
 		borderColor: '#27272a',
@@ -607,5 +984,48 @@ const styles = StyleSheet.create({
 		color: '#fff',
 		fontWeight: '600',
 		fontSize: 14,
+	},
+	// Recording Panel Styles
+	recordingPanel: {
+		flex: 1,
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		paddingHorizontal: 6,
+		height: 38,
+	},
+	recordingRedDot: {
+		width: 8,
+		height: 8,
+		borderRadius: 4,
+		backgroundColor: '#ef4444',
+		marginRight: 8,
+	},
+	recordingDurationText: {
+		color: '#ef4444',
+		fontSize: 13,
+		fontWeight: '700',
+	},
+	cancelRecordingBtn: {
+		paddingHorizontal: 12,
+		paddingVertical: 8,
+		borderRadius: 8,
+		marginRight: 6,
+	},
+	cancelRecordingBtnText: {
+		color: '#71717a',
+		fontSize: 13,
+		fontWeight: '600',
+	},
+	stopRecordingBtn: {
+		backgroundColor: '#ef4444',
+		paddingHorizontal: 16,
+		paddingVertical: 8,
+		borderRadius: 8,
+	},
+	stopRecordingBtnText: {
+		color: '#fff',
+		fontSize: 13,
+		fontWeight: '700',
 	},
 });
