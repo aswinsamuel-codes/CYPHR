@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View, Alert, StyleSheet, ScrollView, Linking } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Platform, Text, TextInput, TouchableOpacity, View, Alert, StyleSheet, ScrollView, Linking, Modal } from 'react-native';
 import type { MeshManager } from '@/services/mesh/MeshManager';
+import type { BLEPeer } from '@/services/network/BLETransport';
 import { Storage } from '@/services/storage/Storage';
 import { format } from 'date-fns';
 import * as Location from 'expo-location';
@@ -164,6 +165,10 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 	const [recordingDuration, setRecordingDuration] = useState(0);
 	const [currentlyPlayingMsgId, setCurrentlyPlayingMsgId] = useState<string | null>(null);
 	
+	// Mesh Topology states
+	const [connectedPeers, setConnectedPeers] = useState<BLEPeer[]>([]);
+	const [showNodeDirectory, setShowNodeDirectory] = useState(false);
+
 	const inputRef = useRef<TextInput | null>(null);
 	const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
 	const activeSoundRef = useRef<Audio.Sound | null>(null);
@@ -186,9 +191,14 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 			setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
 			await storage.updateStatus(id, status);
 		});
+		const unsubPeers = meshManager.onPeersUpdated((peers) => {
+			setConnectedPeers([...peers]);
+		});
+		
 		return () => {
 			unsubIncoming();
 			unsubStatus();
+			unsubPeers();
 			if (activeSoundRef.current) {
 				activeSoundRef.current.unloadAsync().catch(() => {});
 			}
@@ -624,6 +634,13 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 						);
 					})}
 
+					<TouchableOpacity
+						style={[styles.nodeDirectoryButton]}
+						onPress={() => setShowNodeDirectory(true)}
+					>
+						<Text style={styles.nodeDirectoryButtonText}>📡 Mesh Nodes ({connectedPeers.length})</Text>
+					</TouchableOpacity>
+
 					{/* Interactive Battery / Power Guard Manual Toggle Pill */}
 					<TouchableOpacity
 						onPress={() => setPowerGuardOverride((prev) => !prev)}
@@ -718,6 +735,51 @@ export const ChatScreen: React.FC<Props> = ({ meshManager, storage }) => {
 					</>
 				)}
 			</View>
+
+			{/* Mesh Topology Modal */}
+			<Modal
+				visible={showNodeDirectory}
+				animationType="slide"
+				transparent={true}
+				onRequestClose={() => setShowNodeDirectory(false)}
+			>
+				<View style={styles.modalOverlay}>
+					<View style={styles.modalContent}>
+						<View style={styles.modalHeader}>
+							<Text style={styles.modalTitle}>Active Node Directory</Text>
+							<TouchableOpacity onPress={() => setShowNodeDirectory(false)}>
+								<Text style={styles.modalCloseText}>Done</Text>
+							</TouchableOpacity>
+						</View>
+						
+						{connectedPeers.length === 0 ? (
+							<View style={styles.emptyNodesContainer}>
+								<Text style={styles.emptyNodesText}>No peers discovered yet.</Text>
+								<Text style={styles.emptyNodesSubtext}>Ensure Bluetooth is enabled.</Text>
+							</View>
+						) : (
+							<FlatList
+								data={connectedPeers}
+								keyExtractor={(item) => item.id}
+								renderItem={({ item }) => (
+									<View style={styles.nodeCard}>
+										<View style={styles.nodeCardMain}>
+											<Text style={styles.nodeNameText}>{item.name || 'Anonymous Node'}</Text>
+											<Text style={styles.nodeIdText}>{item.id}</Text>
+										</View>
+										<View style={styles.nodeCardMeta}>
+											<Text style={[styles.nodeStatusText, item.connected ? styles.nodeStatusConnected : styles.nodeStatusDiscovered]}>
+												{item.connected ? '● Connected' : '○ Discovered'}
+											</Text>
+											<Text style={styles.nodeRssiText}>RSSI: {item.rssi || 'N/A'}</Text>
+										</View>
+									</View>
+								)}
+							/>
+						)}
+					</View>
+				</View>
+			</Modal>
 		</KeyboardAvoidingView>
 	);
 };
@@ -1205,5 +1267,110 @@ const styles = StyleSheet.create({
 		color: '#fff',
 		fontSize: 13,
 		fontWeight: '700',
+	},
+	// Mesh Topology Modal Styles
+	nodeDirectoryButton: {
+		paddingHorizontal: 10,
+		paddingVertical: 5,
+		borderRadius: 20,
+		backgroundColor: '#18181b',
+		borderWidth: 1,
+		borderColor: '#27272a',
+		justifyContent: 'center',
+		alignItems: 'center',
+		marginRight: 8,
+	},
+	nodeDirectoryButtonText: {
+		fontSize: 10,
+		fontWeight: '800',
+		color: '#38bdf8',
+	},
+	modalOverlay: {
+		flex: 1,
+		backgroundColor: 'rgba(0,0,0,0.6)',
+		justifyContent: 'flex-end',
+	},
+	modalContent: {
+		backgroundColor: '#18181b',
+		borderTopLeftRadius: 16,
+		borderTopRightRadius: 16,
+		height: '70%',
+		padding: 20,
+	},
+	modalHeader: {
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+		marginBottom: 16,
+		borderBottomWidth: 1,
+		borderBottomColor: '#27272a',
+		paddingBottom: 16,
+	},
+	modalTitle: {
+		color: '#fafafa',
+		fontSize: 18,
+		fontWeight: '700',
+	},
+	modalCloseText: {
+		color: '#38bdf8',
+		fontSize: 16,
+		fontWeight: '600',
+	},
+	emptyNodesContainer: {
+		flex: 1,
+		justifyContent: 'center',
+		alignItems: 'center',
+	},
+	emptyNodesText: {
+		color: '#a1a1aa',
+		fontSize: 16,
+		fontWeight: '600',
+	},
+	emptyNodesSubtext: {
+		color: '#71717a',
+		fontSize: 12,
+		marginTop: 8,
+	},
+	nodeCard: {
+		backgroundColor: '#27272a',
+		borderRadius: 12,
+		padding: 16,
+		marginBottom: 12,
+		flexDirection: 'row',
+		justifyContent: 'space-between',
+		alignItems: 'center',
+	},
+	nodeCardMain: {
+		flex: 1,
+	},
+	nodeNameText: {
+		color: '#fafafa',
+		fontSize: 14,
+		fontWeight: '700',
+	},
+	nodeIdText: {
+		color: '#a1a1aa',
+		fontSize: 11,
+		fontFamily: 'monospace',
+		marginTop: 4,
+	},
+	nodeCardMeta: {
+		alignItems: 'flex-end',
+	},
+	nodeStatusText: {
+		fontSize: 12,
+		fontWeight: '800',
+		marginBottom: 4,
+	},
+	nodeStatusConnected: {
+		color: '#10b981',
+	},
+	nodeStatusDiscovered: {
+		color: '#f59e0b',
+	},
+	nodeRssiText: {
+		color: '#71717a',
+		fontSize: 11,
+		fontFamily: 'monospace',
 	},
 });

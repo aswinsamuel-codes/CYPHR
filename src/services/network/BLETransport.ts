@@ -499,6 +499,11 @@ export class BLETransport {
         }
     }
 
+    /** Returns list of currently tracked peers (discovered or connected) */
+    public getPeers(): BLEPeer[] {
+        return Array.from(this.peers.values());
+    }
+
     /**
      * Broadcast an envelope to ALL connected peers.
      */

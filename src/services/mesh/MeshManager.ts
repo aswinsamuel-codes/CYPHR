@@ -1,7 +1,7 @@
 import EventEmitter from 'eventemitter3';
 import { v4 as uuidv4 } from 'uuid';
 import { CryptoService, EncryptedEnvelope } from '@/services/crypto/CryptoService';
-import { BLETransport } from '@/services/network/BLETransport';
+import { BLETransport, BLEPeer } from '@/services/network/BLETransport';
 import type { ChatMessage } from '@/components/ChatScreen';
 import type { Storage } from '@/services/storage/Storage';
 
@@ -11,6 +11,7 @@ type Events = {
 	message: (msg: ChatMessage) => void;
 	status: (id: string, status: Status) => void;
 	keyChanged: (key: string) => void;
+	peersUpdated: (peers: BLEPeer[]) => void;
 };
 
 type OutboundQueueItem = {
@@ -63,10 +64,16 @@ export class MeshManager {
 			if (!this.peers.includes(peer.id)) {
 				this.peers.push(peer.id);
 			}
+			this.emitter.emit('peersUpdated', this.getPeers());
 		});
 
 		this.bleTransport.onPeerDisconnected((peerId) => {
 			this.peers = this.peers.filter((id) => id !== peerId);
+			this.emitter.emit('peersUpdated', this.getPeers());
+		});
+
+		this.bleTransport.onPeerDiscovered(() => {
+			this.emitter.emit('peersUpdated', this.getPeers());
 		});
 
 		// Initialize BLE (scanning, advertising, auto-connect all handled internally)
@@ -98,6 +105,15 @@ export class MeshManager {
 	onMessage(cb: (msg: ChatMessage) => void) {
 		this.emitter.on('message', cb);
 		return () => this.emitter.off('message', cb);
+	}
+
+	onPeersUpdated(cb: (peers: BLEPeer[]) => void) {
+		this.emitter.on('peersUpdated', cb);
+		return () => this.emitter.off('peersUpdated', cb);
+	}
+
+	getPeers(): BLEPeer[] {
+		return this.bleTransport.getPeers();
 	}
 
 	onStatusUpdate(cb: (id: string, status: Status) => void) {
