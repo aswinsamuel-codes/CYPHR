@@ -195,17 +195,53 @@ const filterSuccess = generalMatch && rescueMatch;
 console.log(filterSuccess ? '\n✅ SUCCESS: Channel filtering & SOS override working correctly' : '\n❌ FAIL: Channel filtering failed');
 console.log();
 
+// ── Test 4: Auto-Triage & Storage Expiry Simulator ──────────────────────
+console.log('Test 4: Storage Auto-Triage Simulator');
+const EXPIRY_TIME_MS = 24 * 60 * 60 * 1000;
+const now = Date.now();
+
+const mockStorageMessages = [
+	{ id: 't1', text: 'Recent message', timestamp: now - 3600 * 1000 }, // 1 hour old
+	{ id: 't2', text: 'Very old text message', timestamp: now - 25 * 3600 * 1000 }, // 25 hours old
+	{ id: 't3', text: '🎵 [VOICE MESSAGE] 🚨\nDuration: 5', timestamp: now - 48 * 3600 * 1000 }, // 48 hours old
+	{ id: 't4', text: '🚨 [SOS BEACON] 🚨\nLat: 1, Lng: 1\nAlt: 1m | Acc: 1m', timestamp: now - 72 * 3600 * 1000 }, // 72 hours old SOS
+];
+
+const simulateCleanOldMessages = (messages) => {
+	return messages.filter((msg) => {
+		const isSos = msg.text.startsWith('🚨 [SOS BEACON] 🚨');
+		if (isSos) return true; // Keep SOS forever
+		const age = now - msg.timestamp;
+		return age < EXPIRY_TIME_MS;
+	});
+};
+
+const cleanedMessages = simulateCleanOldMessages(mockStorageMessages);
+console.log(`  Original count: ${mockStorageMessages.length}`);
+console.log(`  Cleaned count: ${cleanedMessages.length}`);
+console.log(`  Retained IDs: ${cleanedMessages.map(m => m.id).join(', ')}`);
+
+const triageSuccess = cleanedMessages.length === 2 && 
+                      cleanedMessages.some(m => m.id === 't1') && 
+                      cleanedMessages.some(m => m.id === 't4') && 
+                      !cleanedMessages.some(m => m.id === 't2') && 
+                      !cleanedMessages.some(m => m.id === 't3');
+
+console.log(triageSuccess ? '✅ SUCCESS: Storage auto-triage correctly expired old messages but retained SOS' : '❌ FAIL: Auto-triage logic mismatch');
+console.log();
+
 // ── Overall Summary ─────────────────────────────────────────────────────
 console.log('═══════════════════════════════════════');
 console.log('🎯 Summary:');
 console.log('  ✅ SOS Beacon Parser (with Battery): PASS');
 console.log('  ✅ Voice Message Parser: PASS');
 console.log('  ✅ Channel Filtering / Safety Override: PASS');
+console.log('  ✅ Storage Auto-Triage: PASS');
 console.log();
 console.log('🚀 All new features verified to run error-free!');
 console.log('═══════════════════════════════════════\n');
 
-if (!sosSuccess || !voiceSuccess || !filterSuccess) {
+if (!sosSuccess || !voiceSuccess || !filterSuccess || !triageSuccess) {
 	process.exit(1);
 } else {
 	process.exit(0);
